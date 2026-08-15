@@ -1,0 +1,46 @@
+{
+  "mfa_tt111_pv": {
+    "amplitude_mean": 93.85770554794964,
+    "amplitude_std": 9.135998278606872,
+    "tau_discharge_mean": 52.90197887416403,
+    "tau_discharge_std": 5.730387335383943,
+    "tau_charge_mean": 53.85396821045953,
+    "tau_charge_std": 5.4079323922257965,
+    "mean_level_mean": 151.15265205701596,
+    "mean_level_std": 10.00387991784839,
+    "n_windows": 222
+  },
+  "mfa_tt112_pv": {
+    "amplitude_mean": 68.14392426937475,
+    "amplitude_std": 8.397279929369878,
+    "tau_discharge_mean": 51.904957654068376,
+    "tau_discharge_std": 5.129703970732653,
+    "tau_charge_mean": 54.040966803454594,
+    "tau_charge_std": 4.713782325737563,
+    "mean_level_mean": 130.25379973195166,
+    "mean_level_std": 10.038322430594025,
+    "n_windows": 218
+  },
+  "mfa_tt113_pv": {
+    "amplitude_mean": 76.62063358087045,
+    "amplitude_std": 10.253195152733175,
+    "tau_discharge_mean": 51.50887140067962,
+    "tau_discharge_std": 5.053398622250009,
+    "tau_charge_mean": 53.6157502277154,
+    "tau_charge_std": 5.11222689934129,
+    "mean_level_mean": 121.75894951612709,
+    "mean_level_std": 10.987780666367572,
+    "n_windows": 209
+  },
+  "mfa_tt114_pv": {
+    "amplitude_mean": 63.73193742256252,
+    "amplitude_std": 9.291486544172837,
+    "tau_discharge_mean": 52.77687401035343,
+    "tau_discharge_std": 4.029536363138867,
+    "tau_charge_mean": 52.64326898456105,
+    "tau_charge_std": 4.068747953699497,
+    "mean_level_mean": 130.72644770070602,
+    "mean_level_std": 13.472072246673068,
+    "n_windows": 204
+  }
+}

@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Raw production/sensor data and the manual PDF -- proprietary China Steel Aluminium Corp
+# production data and Mechatherm-copyrighted content; kept local, not versioned. The code
+# paths in src/data_loader.py expect these files to exist locally at their documented paths.
+*.xlsx
+*.csv
+*.pdf
+*.jpg
+*.jpeg
+
+# Streamlit
+.streamlit/

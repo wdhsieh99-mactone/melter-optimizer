@@ -1,0 +1,17 @@
+{
+  "params": {
+    "wall_loss_kw": 250.0,
+    "emissivity_eff": 0.45,
+    "efficiency_scale": 1.2353,
+    "burnoff_k0": 0.8583,
+    "burnoff_ea": 45000.0
+  },
+  "meta": {
+    "n_heats_gas_fit": 123,
+    "n_heats_dross_fit": 105,
+    "gas_mape_pct": 17.55,
+    "dross_mae_pct_points": 3.52,
+    "assumed_replay_policy": "roof_melt=1100.0C, switch=0.9*duration, roof_hold=1020.0C, excess_air=25.0% (matches run_baseline_scenario defaults; real historical SP schedules are not logged)",
+    "caveat": "excess-air trajectory is NOT calibrated against real data -- the sensor CSV flow-tag-derived excess air is directional-only (unusable O2 tag); see PLAN.md addendum."
+  }
+}
