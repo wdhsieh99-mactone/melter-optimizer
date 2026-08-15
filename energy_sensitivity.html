@@ -1,0 +1,582 @@
+<title>熔爐能耗敏感度分析</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface:        #fcfcfb;
+    --page:           #f9f9f7;
+    --ink-1:          #0b0b0b;
+    --ink-2:          #52514e;
+    --ink-muted:      #898781;
+    --grid:           #e1e0d9;
+    --axis:           #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --border-strong:  rgba(11,11,11,0.16);
+    --good-text:      #006300;
+
+    --cat-physics:    #2a78d6;   /* categorical slot 1 : blue  */
+    --cat-decision:   #eb6834;   /* categorical slot 2 : orange */
+    --cat-input:      #1baf7a;   /* categorical slot 3 : aqua  */
+
+    --cat-physics-wash:   rgba(42,120,214,0.10);
+    --cat-decision-wash:  rgba(235,104,52,0.10);
+    --cat-input-wash:     rgba(27,175,122,0.10);
+
+    --shadow: 0 1px 2px rgba(11,11,11,0.04), 0 8px 24px rgba(11,11,11,0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .viz-root {
+      color-scheme: dark;
+      --surface:        #1a1a19;
+      --page:           #0d0d0d;
+      --ink-1:          #ffffff;
+      --ink-2:          #c3c2b7;
+      --ink-muted:      #898781;
+      --grid:           #2c2c2a;
+      --axis:           #383835;
+      --border:         rgba(255,255,255,0.10);
+      --border-strong:  rgba(255,255,255,0.18);
+      --good-text:      #0ca30c;
+
+      --cat-physics:    #3987e5;
+      --cat-decision:   #d95926;
+      --cat-input:      #199e70;
+
+      --cat-physics-wash:   rgba(57,135,229,0.14);
+      --cat-decision-wash:  rgba(217,89,38,0.14);
+      --cat-input-wash:     rgba(25,158,112,0.14);
+
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 28px rgba(0,0,0,0.4);
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface:        #1a1a19;
+    --page:           #0d0d0d;
+    --ink-1:          #ffffff;
+    --ink-2:          #c3c2b7;
+    --ink-muted:      #898781;
+    --grid:           #2c2c2a;
+    --axis:           #383835;
+    --border:         rgba(255,255,255,0.10);
+    --border-strong:  rgba(255,255,255,0.18);
+    --good-text:      #0ca30c;
+
+    --cat-physics:    #3987e5;
+    --cat-decision:   #d95926;
+    --cat-input:      #199e70;
+
+    --cat-physics-wash:   rgba(57,135,229,0.14);
+    --cat-decision-wash:  rgba(217,89,38,0.14);
+    --cat-input-wash:     rgba(25,158,112,0.14);
+
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 28px rgba(0,0,0,0.4);
+  }
+
+  .viz-root {
+    background: var(--page);
+    color: var(--ink-1);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Noto Sans TC", sans-serif;
+    min-height: 100vh;
+    padding: clamp(20px, 4vw, 56px);
+    box-sizing: border-box;
+  }
+  .viz-root * { box-sizing: border-box; }
+  .mono {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  .shell { max-width: 1160px; margin: 0 auto; }
+
+  /* ---------- Header ---------- */
+  .eyebrow {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--ink-muted); margin: 0 0 10px;
+  }
+  h1 {
+    font-size: clamp(22px, 3vw, 30px); font-weight: 700; letter-spacing: -0.01em;
+    margin: 0 0 8px; text-wrap: balance; line-height: 1.25;
+  }
+  .subtitle {
+    font-size: 14.5px; color: var(--ink-2); max-width: 640px; line-height: 1.6; margin: 0;
+  }
+
+  /* ---------- Hero stat strip ---------- */
+  .hero {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1px; background: var(--border); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden; margin: 28px 0 30px;
+  }
+  .stat {
+    background: var(--surface); padding: 18px 20px; display: flex; flex-direction: column; gap: 6px;
+  }
+  .stat-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-muted); }
+  .stat-value { font-size: 26px; font-weight: 700; line-height: 1.1; }
+  .stat-value .unit { font-size: 14px; font-weight: 500; color: var(--ink-2); margin-left: 2px; }
+  .stat-sub { font-size: 12.5px; color: var(--ink-2); }
+  .stat.hero-top { background: var(--cat-physics-wash); }
+  .stat.hero-top .stat-value { color: var(--cat-physics); }
+  .delta-up { color: var(--good-text); }
+
+  /* ---------- Section chrome ---------- */
+  .panel {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 22px clamp(16px, 3vw, 26px); box-shadow: var(--shadow); margin-bottom: 22px;
+  }
+  .panel-head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  h2 { font-size: 15.5px; font-weight: 700; margin: 0; letter-spacing: -0.005em; }
+  .panel-note { font-size: 12.5px; color: var(--ink-muted); margin: 0 0 16px; }
+
+  /* ---------- Filter chips ---------- */
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 6px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600;
+    padding: 6px 12px 6px 9px; border-radius: 999px; border: 1px solid var(--border-strong);
+    background: var(--surface); color: var(--ink-2); cursor: pointer; user-select: none;
+    transition: opacity .15s ease, border-color .15s ease;
+  }
+  .chip:focus-visible { outline: 2px solid var(--cat-physics); outline-offset: 2px; }
+  .chip .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .chip[data-off="true"] { opacity: 0.4; }
+  .chip[data-cat="physics"] .dot { background: var(--cat-physics); }
+  .chip[data-cat="decision"] .dot { background: var(--cat-decision); }
+  .chip[data-cat="input"] .dot { background: var(--cat-input); }
+
+  /* ---------- Ranked bar chart ---------- */
+  .bars { display: flex; flex-direction: column; gap: 3px; margin-top: 18px; }
+  .bar-row {
+    display: grid; grid-template-columns: 200px 1fr 76px; align-items: center; gap: 12px;
+    padding: 7px 6px; border-radius: 8px; cursor: pointer; border: 1px solid transparent;
+    background: none; text-align: left; font: inherit; color: inherit; width: 100%;
+    transition: background .12s ease, opacity .15s ease;
+  }
+  .bar-row:hover, .bar-row:focus-visible { background: var(--page); }
+  .bar-row:focus-visible { outline: 2px solid var(--cat-physics); outline-offset: -1px; }
+  .bar-row[data-selected="true"] { border-color: var(--border-strong); background: var(--page); }
+  .bar-row[data-dim="true"] { opacity: 0.32; }
+  .bar-label { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .bar-label .zh { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-label .en { font-size: 10.5px; color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-track { position: relative; height: 20px; background: var(--grid); border-radius: 4px; overflow: hidden; }
+  .bar-fill { position: absolute; top: 0; left: 0; height: 100%; border-radius: 4px; min-width: 3px; }
+  .bar-fill[data-cat="physics"] { background: var(--cat-physics); }
+  .bar-fill[data-cat="decision"] { background: var(--cat-decision); }
+  .bar-fill[data-cat="input"] { background: var(--cat-input); }
+  .bar-value { font-size: 13px; font-weight: 700; text-align: right; }
+
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .legend-item { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ink-2); }
+  .legend-item .dot { width: 9px; height: 9px; border-radius: 50%; }
+  .legend-item .dot[data-cat="physics"] { background: var(--cat-physics); }
+  .legend-item .dot[data-cat="decision"] { background: var(--cat-decision); }
+  .legend-item .dot[data-cat="input"] { background: var(--cat-input); }
+
+  /* ---------- Detail curve panel ---------- */
+  .detail-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  .detail-title-group { display: flex; align-items: center; gap: 10px; }
+  .detail-swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+  .detail-title { font-size: 16px; font-weight: 700; }
+  .detail-title .en { font-size: 12px; font-weight: 500; color: var(--ink-muted); margin-left: 8px; }
+  .detail-impact { font-size: 12.5px; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
+
+  .chart-wrap { overflow-x: auto; margin-top: 10px; }
+  .chart-svg { display: block; min-width: 560px; width: 100%; height: 260px; }
+  .curve-line { fill: none; stroke-width: 2.5; }
+  .curve-area { opacity: 0.10; }
+  .curve-pt { stroke-width: 2; }
+  .curve-pt.baseline { r: 6; }
+  .axis-tick { font-size: 10.5px; fill: var(--ink-muted); font-family: ui-monospace, "SF Mono", monospace; }
+  .axis-label { font-size: 10.5px; fill: var(--ink-muted); }
+  .grid-line { stroke: var(--grid); stroke-width: 1; }
+  .baseline-line { stroke: var(--axis); stroke-width: 1; stroke-dasharray: 3 3; }
+  .delta-tag { font-size: 11px; font-weight: 700; font-family: ui-monospace, "SF Mono", monospace; }
+
+  .tooltip {
+    position: absolute; pointer-events: none; background: var(--ink-1); color: var(--surface);
+    font-size: 11.5px; padding: 7px 10px; border-radius: 7px; line-height: 1.5;
+    box-shadow: var(--shadow); opacity: 0; transition: opacity .1s ease; z-index: 5; white-space: nowrap;
+  }
+  .tooltip strong { font-family: ui-monospace, "SF Mono", monospace; }
+  .chart-region { position: relative; }
+
+  /* ---------- Table ---------- */
+  details.table-toggle summary {
+    cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--ink-2);
+    list-style: none; display: flex; align-items: center; gap: 6px; padding: 4px 0;
+  }
+  details.table-toggle summary::-webkit-details-marker { display: none; }
+  details.table-toggle summary::before { content: "▸"; font-size: 10px; transition: transform .15s ease; }
+  details.table-toggle[open] summary::before { transform: rotate(90deg); }
+  .table-wrap { overflow-x: auto; margin-top: 12px; }
+  table.data-table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 640px; }
+  table.data-table th {
+    text-align: left; font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--ink-muted); padding: 8px 10px; border-bottom: 1px solid var(--border-strong);
+  }
+  table.data-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  table.data-table td.num { font-family: ui-monospace, "SF Mono", monospace; text-align: right; font-variant-numeric: tabular-nums; }
+  table.data-table tr:hover td { background: var(--page); }
+  .cat-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; }
+  .cat-pill .dot { width: 7px; height: 7px; border-radius: 50%; }
+
+  /* ---------- Footer ---------- */
+  .foot {
+    font-size: 12px; color: var(--ink-muted); line-height: 1.7; margin-top: 8px;
+    padding-top: 18px; border-top: 1px solid var(--border);
+  }
+  .foot code { font-family: ui-monospace, "SF Mono", monospace; font-size: 11.5px; background: var(--page); padding: 1px 5px; border-radius: 4px; }
+
+  @media (max-width: 640px) {
+    .bar-row { grid-template-columns: 120px 1fr 60px; gap: 8px; }
+    .bar-label .en { display: none; }
+  }
+</style>
+
+<div class="viz-root">
+  <div class="shell">
+
+    <p class="eyebrow">80T 熔鋁爐 · 校正後物理模型</p>
+    <h1>能耗敏感度分析：哪個因子對燃氣消耗影響最大？</h1>
+    <p class="subtitle">
+      以最佳化搜尋出的實際操作點為基準（65 噸 5052 合金、6 小時出湯時限、頂溫 1120°C、
+      切換點 2.7h、保溫 880°C、過剩空氣 10%），對 10 個模型因子逐一調整，量測每一步對
+      單爐累積燃氣消耗量（Nm³）的影響幅度。
+    </p>
+
+    <div class="hero">
+      <div class="stat">
+        <span class="stat-label">基準燃氣消耗</span>
+        <span class="stat-value mono" id="stat-baseline">— <span class="unit">Nm³ / 爐</span></span>
+        <span class="stat-sub">65t 5052、6 小時、校正後模型</span>
+      </div>
+      <div class="stat hero-top">
+        <span class="stat-label">影響最大的因子</span>
+        <span class="stat-value" id="stat-top-name">—</span>
+        <span class="stat-sub">平均影響幅度 <strong class="mono" id="stat-top-pct">—</strong></span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">影響最小的因子</span>
+        <span class="stat-value" id="stat-bottom-name">—</span>
+        <span class="stat-sub">平均影響幅度 <strong class="mono" id="stat-bottom-pct">—</strong></span>
+      </div>
+    </div>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>因子影響幅度排名</h2>
+      </div>
+      <p class="panel-note">±20% 上下擾動後，單爐燃氣消耗量相對基準值的平均變化幅度（點擊任一列查看完整曲線）</p>
+
+      <div class="filters" id="filters" role="group" aria-label="依類別篩選">
+        <button class="chip" data-cat="physics" type="button"><span class="dot"></span>物理常數 Physics</button>
+        <button class="chip" data-cat="decision" type="button"><span class="dot"></span>操作決策 Decision</button>
+        <button class="chip" data-cat="input" type="button"><span class="dot"></span>投料條件 Input</button>
+      </div>
+
+      <div class="bars" id="bars" role="list"></div>
+
+      <div class="legend">
+        <span class="legend-item"><span class="dot" data-cat="physics"></span>物理常數（燃燒效率、幾何、材料特性）</span>
+        <span class="legend-item"><span class="dot" data-cat="decision"></span>操作決策（操作員可調整的排程參數）</span>
+        <span class="legend-item"><span class="dot" data-cat="input"></span>投料條件（本爐投料重量）</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="detail-head">
+        <div class="detail-title-group">
+          <span class="detail-swatch" id="detail-swatch"></span>
+          <span class="detail-title" id="detail-title">—<span class="en" id="detail-title-en"></span></span>
+        </div>
+        <span class="detail-impact" id="detail-impact"></span>
+      </div>
+      <p class="panel-note" id="detail-note"></p>
+
+      <div class="chart-wrap">
+        <div class="chart-region">
+          <svg class="chart-svg" id="curve-svg" viewBox="0 0 720 260" preserveAspectRatio="xMidYMid meet"></svg>
+          <div class="tooltip" id="tooltip"></div>
+        </div>
+      </div>
+
+      <details class="table-toggle">
+        <summary>顯示完整數據表</summary>
+        <div class="table-wrap">
+          <table class="data-table" id="data-table">
+            <thead>
+              <tr><th>因子</th><th>類別</th><th>參數值</th><th class="num">燃氣量 (Nm³)</th><th class="num">與基準差異</th></tr>
+            </thead>
+            <tbody id="data-table-body"></tbody>
+          </table>
+        </div>
+      </details>
+    </section>
+
+    <p class="foot">
+      資料來源：<code>src/sensitivity_analysis.py</code> 對已校正物理模型（<code>calibrated_constants.json</code>，
+      燃耗擬合 MAPE 17.8%）逐一參數掃描的即時計算結果，基準情境固定投料重量與出湯時限，僅調整單一因子。
+      完整方法與過程中發現/修復的程式碼問題見 <code>SENSITIVITY_REPORT.md</code> 與
+      <code>REGENERATIVE_SYSTEM_ANALYSIS.md</code>。「操作決策」類別的影響幅度代表偏離目前最佳化排程的
+      代價，非物理常數的不確定性。
+    </p>
+
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var DATA = {
+    baseline_gas_nm3: 2724.46,
+    factors: [
+      { key: "hearth_area", label_zh: "爐床輻射面積", label_en: "Hearth Radiating Area", unit: "m²", category: "physics",
+        levels: [30, 45, 66.15, 90, 120], gas: [1698.94, 2341.34, 2724.46, 3253.10, 3944.91], baseline_idx: 2,
+        note: "輻射熱傳與面積成正比：Melt 階段不論湯溫是否達標都持續加熱，面積越大、固定時窗內累積熱量與耗氣量都越多。" },
+      { key: "emissivity", label_zh: "輻射係數", label_en: "Radiative Emissivity", unit: "", category: "physics",
+        levels: [0.20, 0.30, 0.45, 0.60, 0.80], gas: [1901.61, 2419.39, 2724.46, 3219.21, 3770.18], baseline_idx: 2,
+        note: "與爐床面積同機制：放大頂罩對鋁湯的輻射傳熱效率，在固定 Melt 時窗下反而拉高總耗氣量。" },
+      { key: "efficiency_scale", label_zh: "燃燒效率校正", label_en: "Combustion Efficiency Scale", unit: "x", category: "physics",
+        levels: [0.50, 0.80, 1.00, 1.248, 1.60], gas: [4523.31, 3785.05, 3115.98, 2724.46, 2724.46], baseline_idx: 3,
+        note: "目前校正值 1.248 已讓燃燒效率頂到模型上限 0.68，因此高於此值不再有進一步效果（曲線右側打平）。" },
+      { key: "t_switch", label_zh: "切換保溫時機", label_en: "Melt→Hold Switch Time", unit: "hr", category: "decision",
+        levels: [1.0, 1.8, 2.7, 4.0, 5.0], gas: [2376.13, 2512.90, 2724.46, 3362.60, 3882.09], baseline_idx: 2,
+        note: "越晚切到保溫階段，高燃 Melt 模式運轉時間越長，耗氣量上升速度明顯快於提早切換的節省效果。" },
+      { key: "gas_lhv", label_zh: "燃料熱值", label_en: "Gas Heating Value (LHV)", unit: "kJ/Nm³", category: "physics",
+        levels: [30000, 36000, 40585, 45000, 50000], gas: [3596.35, 3046.53, 2724.46, 2466.44, 2220.68], baseline_idx: 2,
+        note: "同樣熱量需求下，熱值越高、需要的 Nm³ 數越少——反比關係，天然氣品質波動會直接反映在帳面耗氣量。" },
+      { key: "charge_weight", label_zh: "投料重量", label_en: "Charge Weight", unit: "kg", category: "input",
+        levels: [40000, 55000, 65000, 75000, 85000], gas: [2352.38, 2661.02, 2724.46, 2873.30, 3211.79], baseline_idx: 2,
+        note: "投料量越大耗氣量越高在預期之內；但耗氣量成長速度慢於重量成長（固定爐體散熱被分攤），呈現規模經濟。" },
+      { key: "sp_roof_melt", label_zh: "頂溫設點", label_en: "Melt Roof Setpoint", unit: "°C", category: "decision",
+        levels: [1120, 1150, 1180, 1210, 1240], gas: [2724.46, 2898.76, 3084.57, 3251.34, 3428.65], baseline_idx: 0,
+        note: "目前最佳排程已選在搜尋範圍下限 1120°C；往上加溫看似加快熔煉，實際上會拉高耗氣量。" },
+      { key: "wall_loss", label_zh: "爐體固定散熱", label_en: "Fixed Wall Heat Loss", unit: "kW", category: "physics",
+        levels: [50, 150, 250, 400, 600], gas: [2621.61, 2673.35, 2724.46, 2800.96, 2902.76], baseline_idx: 2,
+        note: "固定漏熱對總耗氣量的影響相對溫和——爐體保溫狀況雖然重要，但不是本模型中最敏感的環節。" },
+      { key: "excess_air", label_zh: "過剩空氣率（空燃比）", label_en: "Excess Air (Air-Fuel Ratio)", unit: "%", category: "decision",
+        levels: [5, 10, 15, 22.5, 30], gas: [2724.46, 2724.46, 2732.50, 2816.26, 2946.88], baseline_idx: 1,
+        note: "目前排程已在過剩空氣 10%（低於手冊 15% 高燃上限），繼續調低邊際效益趨近於零，調高才會明顯增加耗氣。" },
+      { key: "sp_roof_hold", label_zh: "保溫設點", label_en: "Hold Roof Setpoint", unit: "°C", category: "decision",
+        levels: [700, 800, 880, 950, 1050], gas: [2724.46, 2724.46, 2724.46, 2724.46, 2868.55], baseline_idx: 2,
+        note: "湯溫在切換後很快貼近目標，保溫段的誤差回饋機制讓頂溫多半壓在低點，此設點的影響幅度全排名最小。" }
+    ]
+  };
+
+  var CAT_LABEL = { physics: "物理常數", decision: "操作決策", input: "投料條件" };
+
+  DATA.factors.forEach(function (f) {
+    var b = DATA.baseline_gas_nm3;
+    var first = f.gas[0], last = f.gas[f.gas.length - 1];
+    var pctFirst = (first - b) / b * 100;
+    var pctLast = (last - b) / b * 100;
+    f.pct = f.gas.map(function (v) { return (v - b) / b * 100; });
+    f.avgAbsImpact = (Math.abs(pctFirst) + Math.abs(pctLast)) / 2;
+  });
+  DATA.factors.sort(function (a, b) { return b.avgAbsImpact - a.avgAbsImpact; });
+
+  var activeFilters = { physics: true, decision: true, input: true };
+  var selectedKey = DATA.factors[0].key;
+
+  var barsEl = document.getElementById("bars");
+  var maxImpact = Math.max.apply(null, DATA.factors.map(function (f) { return f.avgAbsImpact; }));
+
+  function fmt1(n) { return n.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }); }
+  function fmtPct(n) { return (n > 0 ? "+" : "") + n.toFixed(1) + "%"; }
+
+  function renderBars() {
+    barsEl.innerHTML = "";
+    DATA.factors.forEach(function (f) {
+      var row = document.createElement("button");
+      row.className = "bar-row";
+      row.type = "button";
+      row.setAttribute("role", "listitem");
+      row.dataset.key = f.key;
+      if (f.key === selectedKey) row.dataset.selected = "true";
+      if (!activeFilters[f.category]) row.dataset.dim = "true";
+
+      var widthPct = Math.max(2, (f.avgAbsImpact / maxImpact) * 100);
+      row.innerHTML =
+        '<span class="bar-label"><span class="zh">' + f.label_zh + '</span><span class="en">' + f.label_en + '</span></span>' +
+        '<span class="bar-track"><span class="bar-fill" data-cat="' + f.category + '" style="width:' + widthPct + '%"></span></span>' +
+        '<span class="bar-value mono">' + f.avgAbsImpact.toFixed(1) + '%</span>';
+
+      row.addEventListener("click", function () { selectFactor(f.key); });
+      barsEl.appendChild(row);
+    });
+  }
+
+  function renderFilters() {
+    document.querySelectorAll(".chip").forEach(function (chip) {
+      var cat = chip.dataset.cat;
+      chip.dataset.off = activeFilters[cat] ? "false" : "true";
+      chip.addEventListener("click", function () {
+        activeFilters[cat] = !activeFilters[cat];
+        renderBars();
+        chip.dataset.off = activeFilters[cat] ? "false" : "true";
+      });
+    });
+  }
+
+  function selectFactor(key) {
+    selectedKey = key;
+    renderBars();
+    renderDetail();
+  }
+
+  var svgNS = "http://www.w3.org/2000/svg";
+  function svgEl(tag, attrs) {
+    var el = document.createElementNS(svgNS, tag);
+    for (var k in attrs) el.setAttribute(k, attrs[k]);
+    return el;
+  }
+
+  function renderDetail() {
+    var f = DATA.factors.filter(function (x) { return x.key === selectedKey; })[0];
+    var catColorVar = "--cat-" + f.category;
+
+    document.getElementById("detail-swatch").style.background = "var(" + catColorVar + ")";
+    document.getElementById("detail-title").firstChild.textContent = f.label_zh;
+    document.getElementById("detail-title-en").textContent = " " + f.label_en;
+    document.getElementById("detail-note").textContent = f.note;
+
+    var impactEl = document.getElementById("detail-impact");
+    impactEl.textContent = "平均影響幅度 " + f.avgAbsImpact.toFixed(1) + "%";
+    impactEl.style.background = "var(--cat-" + f.category + "-wash)";
+    impactEl.style.color = "var(--cat-" + f.category + ")";
+
+    drawCurve(f);
+    renderTable(f);
+  }
+
+  function drawCurve(f) {
+    var svg = document.getElementById("curve-svg");
+    svg.innerHTML = "";
+    var W = 720, H = 260, padL = 64, padR = 24, padT = 20, padB = 36;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+
+    var minG = Math.min.apply(null, f.gas), maxG = Math.max.apply(null, f.gas);
+    var span = maxG - minG || 1;
+    var yPad = span * 0.18;
+    var yMin = minG - yPad, yMax = maxG + yPad;
+
+    function xAt(i) { return padL + (i / (f.levels.length - 1)) * plotW; }
+    function yAt(v) { return padT + plotH - ((v - yMin) / (yMax - yMin)) * plotH; }
+
+    // gridlines (5 horizontal)
+    var steps = 4;
+    for (var s = 0; s <= steps; s++) {
+      var val = yMin + (s / steps) * (yMax - yMin);
+      var y = yAt(val);
+      svg.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: y, y2: y, class: "grid-line" }));
+      var t = svgEl("text", { x: padL - 10, y: y + 4, class: "axis-tick", "text-anchor": "end" });
+      t.textContent = Math.round(val).toLocaleString("en-US");
+      svg.appendChild(t);
+    }
+
+    // baseline dashed line
+    var byLine = yAt(DATA.baseline_gas_nm3);
+    svg.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: byLine, y2: byLine, class: "baseline-line" }));
+    var blabel = svgEl("text", { x: W - padR, y: byLine - 6, class: "axis-tick", "text-anchor": "end" });
+    blabel.textContent = "基準 " + fmt1(DATA.baseline_gas_nm3) + " Nm³";
+    svg.appendChild(blabel);
+
+    // area fill
+    var areaPts = f.levels.map(function (_, i) { return xAt(i) + "," + yAt(f.gas[i]); }).join(" ");
+    var areaPath = "M" + xAt(0) + "," + yAt(yMin) + " L" + areaPts.split(" ").join(" L") + " L" + xAt(f.levels.length - 1) + "," + yAt(yMin) + " Z";
+    svg.appendChild(svgEl("path", { d: areaPath, class: "curve-area", fill: "var(--cat-" + f.category + ")" }));
+
+    // line
+    var linePath = f.levels.map(function (_, i) { return (i === 0 ? "M" : "L") + xAt(i) + "," + yAt(f.gas[i]); }).join(" ");
+    svg.appendChild(svgEl("path", { d: linePath, class: "curve-line", stroke: "var(--cat-" + f.category + ")" }));
+
+    // x axis ticks
+    f.levels.forEach(function (lvl, i) {
+      var t = svgEl("text", { x: xAt(i), y: H - 10, class: "axis-tick", "text-anchor": "middle" });
+      t.textContent = (lvl % 1 === 0 ? lvl : lvl.toFixed(2)) + (f.unit ? " " + f.unit : "");
+      svg.appendChild(t);
+    });
+
+    var tooltip = document.getElementById("tooltip");
+    var region = svg.parentElement;
+
+    // points + hover targets
+    f.levels.forEach(function (lvl, i) {
+      var isBaseline = i === f.baseline_idx;
+      var cx = xAt(i), cy = yAt(f.gas[i]);
+      var pt = svgEl("circle", {
+        cx: cx, cy: cy, r: isBaseline ? 6 : 4.5,
+        class: "curve-pt" + (isBaseline ? " baseline" : ""),
+        fill: "var(--surface)", stroke: "var(--cat-" + f.category + ")"
+      });
+      svg.appendChild(pt);
+
+      if (i === 0 || i === f.levels.length - 1) {
+        var dtag = svgEl("text", {
+          x: cx, y: cy + (f.gas[i] >= DATA.baseline_gas_nm3 ? -12 : 18),
+          class: "delta-tag", "text-anchor": "middle",
+          fill: f.pct[i] > 0.05 ? "var(--cat-decision)" : (f.pct[i] < -0.05 ? "var(--good-text)" : "var(--ink-muted)")
+        });
+        dtag.textContent = fmtPct(f.pct[i]);
+        svg.appendChild(dtag);
+      }
+
+      var hit = svgEl("circle", { cx: cx, cy: cy, r: 14, fill: "transparent", style: "cursor:pointer" });
+      hit.addEventListener("mousemove", function (evt) {
+        var rect = region.getBoundingClientRect();
+        tooltip.style.opacity = "1";
+        tooltip.style.left = (evt.clientX - rect.left + 14) + "px";
+        tooltip.style.top = (evt.clientY - rect.top - 14) + "px";
+        tooltip.innerHTML =
+          f.label_zh + " = <strong>" + lvl + (f.unit ? " " + f.unit : "") + "</strong>" +
+          (isBaseline ? "  <em>(基準)</em>" : "") + "<br>燃氣量 <strong>" + fmt1(f.gas[i]) + " Nm³</strong>" +
+          "<br>與基準差異 <strong>" + fmtPct(f.pct[i]) + "</strong>";
+      });
+      hit.addEventListener("mouseleave", function () { tooltip.style.opacity = "0"; });
+      svg.appendChild(hit);
+    });
+
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", f.label_zh + " 對燃氣消耗量的影響曲線，基準 " + fmt1(DATA.baseline_gas_nm3) + " Nm3");
+  }
+
+  function renderTable(highlightF) {
+    var tbody = document.getElementById("data-table-body");
+    tbody.innerHTML = "";
+    DATA.factors.forEach(function (f) {
+      f.levels.forEach(function (lvl, i) {
+        var tr = document.createElement("tr");
+        if (f.key === highlightF.key) tr.style.background = "var(--page)";
+        tr.innerHTML =
+          "<td>" + f.label_zh + (i === 0 ? "" : "") + "</td>" +
+          '<td><span class="cat-pill"><span class="dot" style="background:var(--cat-' + f.category + ')"></span>' + CAT_LABEL[f.category] + "</span></td>" +
+          "<td class=\"mono\">" + lvl + (f.unit ? " " + f.unit : "") + (i === f.baseline_idx ? " ★" : "") + "</td>" +
+          '<td class="num mono">' + fmt1(f.gas[i]) + "</td>" +
+          '<td class="num mono">' + fmtPct(f.pct[i]) + "</td>";
+        tbody.appendChild(tr);
+      });
+    });
+  }
+
+  function renderHero() {
+    document.getElementById("stat-baseline").firstChild.textContent = fmt1(DATA.baseline_gas_nm3) + " ";
+    var top = DATA.factors[0], bottom = DATA.factors[DATA.factors.length - 1];
+    document.getElementById("stat-top-name").textContent = top.label_zh;
+    document.getElementById("stat-top-pct").textContent = "±" + top.avgAbsImpact.toFixed(1) + "%";
+    document.getElementById("stat-bottom-name").textContent = bottom.label_zh;
+    document.getElementById("stat-bottom-pct").textContent = "±" + bottom.avgAbsImpact.toFixed(1) + "%";
+  }
+
+  renderHero();
+  renderFilters();
+  renderBars();
+  renderDetail();
+
+  window.addEventListener("resize", function () {
+    var f = DATA.factors.filter(function (x) { return x.key === selectedKey; })[0];
+    drawCurve(f);
+  });
+})();
+</script>
