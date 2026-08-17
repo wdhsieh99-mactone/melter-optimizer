@@ -169,14 +169,18 @@ class HeatingCurveOptimizer:
             q_conv_kw = 1.2 * self.model.HEARTH_AREA_M2 * max(0.0, current_roof_temp - current_bath_temp) * 0.015 # kW
             q_total_kw = q_rad_kw + q_conv_kw
             
-            q_step_kj = q_total_kw * (dt_mins * 60.0)
-            
             # Combustion efficiency considering excess air ratio
             eff = self.model.combustion_efficiency(current_roof_temp, excess_air_pct=excess_air_pct)
             q_combustion_needed_kw = q_total_kw / eff + self.model.wall_loss_kw
             gas_flow_unclamp = (q_combustion_needed_kw * 3600.0) / self.model.GAS_LHV if self.model.GAS_LHV > 0 else 0.0
             gas_flow_nm3h = min(max_gas_limit, gas_flow_unclamp)
             
+            # Energy balance: heat transferred to bath cannot exceed available burner output minus wall loss
+            q_combustion_actual_kw = (gas_flow_nm3h * self.model.GAS_LHV) / 3600.0 if self.model.GAS_LHV > 0 else 0.0
+            q_bath_max_kw = max(0.0, (q_combustion_actual_kw - self.model.wall_loss_kw) * eff)
+            q_bath_actual_kw = min(q_total_kw, q_bath_max_kw)
+            q_step_kj = q_bath_actual_kw * (dt_mins * 60.0)
+
             gas_step_nm3 = gas_flow_nm3h * dt_hrs
             cumulative_gas_nm3 += gas_step_nm3
             

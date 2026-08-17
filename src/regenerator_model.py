@@ -188,7 +188,7 @@ def estimate_period(temps_c: np.ndarray, min_amplitude: float = 5.0) -> Optional
 
 
 def save_baseline(baseline_stats: Dict[str, Dict[str, float]], path: str = _BASELINE_PATH) -> None:
-    with open(path, 'w') as f:
+    with open(path, 'w', encoding='utf-8') as f:
         json.dump(baseline_stats, f, indent=2)
 
 
@@ -197,7 +197,7 @@ def load_baseline(path: str = _BASELINE_PATH) -> Dict[str, Dict[str, float]]:
     if not os.path.exists(path):
         return {}
     try:
-        with open(path, 'r') as f:
+        with open(path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except (json.JSONDecodeError, OSError):
         return {}

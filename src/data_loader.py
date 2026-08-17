@@ -13,9 +13,10 @@ try:
 except ImportError:
     from physics_model import STOICH_AIR_GAS_RATIO
 
-DEFAULT_CSV_PATH = '/Users/mactone/Dropbox (Maestral)/Working/002-Doing/claude/melter2/mfa_20260707-0714_wide.csv'
-DEFAULT_EXCEL_PROD_PATH = '/Users/mactone/Dropbox (Maestral)/Working/002-Doing/claude/melter2/115年 MFX生產紀錄.xlsx'
-DEFAULT_EXCEL_CHARGE_PATH = '/Users/mactone/Dropbox (Maestral)/Working/002-Doing/claude/melter2/6月份加料紀錄.xlsx'
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_CSV_PATH = os.path.join(_BASE_DIR, 'mfa_20260707-0714_wide.csv')
+DEFAULT_EXCEL_PROD_PATH = os.path.join(_BASE_DIR, '115年 MFX生產紀錄.xlsx')
+DEFAULT_EXCEL_CHARGE_PATH = os.path.join(_BASE_DIR, '6月份加料紀錄.xlsx')
 
 # Combustion air/gas flow transmitter tags per burner pair (confirmed via magnitude analysis
 # of mfa_20260707-0714_wide.csv against Mechatherm manual sec. 1.3.8 burner air/gas ratio loops):

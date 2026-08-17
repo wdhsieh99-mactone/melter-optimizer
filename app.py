@@ -58,7 +58,7 @@ def load_calibration_meta():
     if not os.path.exists(_CALIBRATED_CONSTANTS_PATH):
         return None
     try:
-        with open(_CALIBRATED_CONSTANTS_PATH, 'r') as f:
+        with open(_CALIBRATED_CONSTANTS_PATH, 'r', encoding='utf-8') as f:
             return json.load(f).get('meta')
     except (json.JSONDecodeError, OSError):
         return None

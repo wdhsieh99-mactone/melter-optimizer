@@ -681,7 +681,7 @@ def generate_report(results: List[SweepResult]) -> str:
 def run_sensitivity_analysis() -> str:
     results = [f() for f in SWEEP_FUNCS]
     report = generate_report(results)
-    with open(REPORT_PATH, 'w') as f:
+    with open(REPORT_PATH, 'w', encoding='utf-8') as f:
         f.write(report)
     return report
 

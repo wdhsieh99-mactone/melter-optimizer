@@ -191,7 +191,7 @@ def run_calibration(sample_n: int = 120, dt_mins: float = 5.0, random_state: int
         },
     }
 
-    with open(_CALIBRATED_CONSTANTS_PATH, 'w') as f:
+    with open(_CALIBRATED_CONSTANTS_PATH, 'w', encoding='utf-8') as f:
         json.dump(result, f, indent=2)
 
     return result

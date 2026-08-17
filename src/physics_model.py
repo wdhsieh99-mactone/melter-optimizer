@@ -19,7 +19,7 @@ def load_calibrated_defaults() -> Dict[str, float]:
     if not os.path.exists(_CALIBRATED_CONSTANTS_PATH):
         return {}
     try:
-        with open(_CALIBRATED_CONSTANTS_PATH, 'r') as f:
+        with open(_CALIBRATED_CONSTANTS_PATH, 'r', encoding='utf-8') as f:
             data = json.load(f)
         return data.get('params', {})
     except (json.JSONDecodeError, OSError):

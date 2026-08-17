@@ -28,7 +28,7 @@ PLAN.md). This is a diagnostic pass -- findings are surfaced, not auto-fixed.
 | residual_weight_kg (marginal cost) | furnace_input | residual < fresh charge (per kg) | residual=-0.00380, fresh=0.01019 Nm3/kg | ✅ matches | ➖ |
 | residual_weight_kg (fixed total mass) | furnace_input | with_residual < all_cold | True | ✅ matches | ➖ |
 | max_roof_sp_limit | optimizer_search | non_increase | flat | ✅ matches | ➖ |
-| discharge_deadline_hrs (feasibility) | optimizer_search | infeasible regime exists at short deadlines | [(2.0, False), (3.0, True), (4.0, True), (6.0, True), (9.0, True)] | ✅ matches | ➖ |
+| discharge_deadline_hrs (feasibility) | optimizer_search | infeasible regime exists at short deadlines | [(2.0, False), (3.0, False), (4.0, True), (6.0, True), (9.0, True)] | ✅ matches | ➖ |
 | aluminum_price -> chosen excess_air_pct | price_responsiveness | non_increase | flat | ✅ matches | ➖ |
 
 ## Per-parameter detail
@@ -47,7 +47,7 @@ PLAN.md). This is a diagnostic pass -- findings are surfaced, not auto-fixed.
 - **Observed**: increase  -> ✅ matches
 - **Benchmark**: Manual sec.1.3.2: bath 10,500x6,300mm = 66.15 m^2. IMPORTANT -- initial hypothesis of "larger area -> less gas" was WRONG for this model as currently structured, confirmed by inspecting final_bath_temp_c across the sweep: at area=30 the bath only reaches 683.5C (undershoots 720 target, not enough transfer capacity in the fixed 4h-melt/2h-hold schedule); at area=45 it lands almost exactly on 720C; at area>=66.15 it OVERSHOOTS to the hardcoded 800C clamp. Because the Melt phase adds heat unconditionally regardless of current bath temperature (`or phase == "Melt"` in optimizer.py), a MORE effective transfer geometry just delivers (and burns gas for) MORE total heat within the fixed melt duration, most of it wasted as overshoot once transfer capacity exceeds what is needed. So "increase" is the CORRECT expected direction given the current fixed-duration, non-early-terminating Melt-phase design -- not a bug in itself, but worth knowing when interpreting sensitivity results for any parameter that boosts heat transfer rate (see emissivity_eff below, same mechanism).
 - **Plausible magnitude**: ✅ yes
-- **cum_gas_nm3 by level**: 30.0 -> 2136.21 | 45.0 -> 2838.54 | 66.2 -> 3671.10 | 90.0 -> 4652.20 | 120.0 -> 5708.04
+- **cum_gas_nm3 by level**: 30.0 -> 2136.21 | 45.0 -> 2838.54 | 66.2 -> 3671.10 | 90.0 -> 4652.20 | 120.0 -> 5712.75
 - **Notes**: FIXED: was previously an ~11x weaker response (only the convective term in optimizer.py respected this override) -- now spans the full range (area 30->120 moves cum_gas_nm3 by roughly the same magnitude as the module-level sweep used to show pre-fix), confirming radiant_heat_flux_kw() and dross_burnoff_rate_kg_hr() now correctly read self.HEARTH_AREA_M2.
 
 ### HEARTH_AREA_M2 (module patch, post-fix regression guard)
@@ -72,7 +72,7 @@ PLAN.md). This is a diagnostic pass -- findings are surfaced, not auto-fixed.
 - **Observed**: increase  -> ✅ matches
 - **Benchmark**: Physically bounded [0,1]; 0.45 default is a plausible mid-range effective value for a refractory-lined furnace with some view-factor losses. Same "increase" mechanism as HEARTH_AREA_M2 above: emissivity scales radiant transfer identically to area in radiant_heat_flux_kw(), so it hits the same fixed-Melt-duration overshoot behavior.
 - **Plausible magnitude**: ✅ yes
-- **cum_gas_nm3 by level**: 0.2 -> 2369.46 | 0.3 -> 3127.90 | 0.5 -> 3671.10 | 0.6 -> 4485.54 | 0.8 -> 5454.39
+- **cum_gas_nm3 by level**: 0.2 -> 2369.46 | 0.3 -> 3127.90 | 0.5 -> 3671.10 | 0.6 -> 4485.54 | 0.8 -> 5460.59
 
 ### efficiency_scale
 - **What**: Fitted multiplier on combustion_efficiency()
@@ -80,7 +80,7 @@ PLAN.md). This is a diagnostic pass -- findings are surfaced, not auto-fixed.
 - **Observed**: decrease  -> ✅ matches
 - **Benchmark**: Calibrated to 1.248 against real gas usage (gas MAPE 17.8%, see calibrated_constants.json).
 - **Plausible magnitude**: ✅ yes
-- **cum_gas_nm3 by level**: 0.5 -> 6027.96 | 0.8 -> 5350.91 | 1.0 -> 4408.07 | 1.2 -> 3646.31 | 1.6 -> 3625.97
+- **cum_gas_nm3 by level**: 0.5 -> 6182.06 | 0.8 -> 5361.20 | 1.0 -> 4408.07 | 1.2 -> 3646.31 | 1.6 -> 3625.97
 
 ### burnoff_k0
 - **What**: Dross oxidation rate pre-exponential scale
@@ -181,15 +181,15 @@ PLAN.md). This is a diagnostic pass -- findings are surfaced, not auto-fixed.
 - **Expected direction**: non_increase
 - **Observed**: flat  -> ✅ matches
 - **Benchmark**: Manual: roof commonly set to a high fixed value, "may be 1200C". A wider search space can never make the found optimum WORSE (non-increasing cost) -- flat is a valid outcome if the true cost-minimizing sp_roof_melt already sits below the search grid's lower bound (1120C) and raising the ceiling only extends the unused upper end.
-- **cum_gas_nm3 by level**: 1150.0 -> 2724.46 | 1180.0 -> 2724.46 | 1200.0 -> 2724.46 | 1220.0 -> 2724.46 | 1250.0 -> 2724.46
+- **cum_gas_nm3 by level**: 1150.0 -> 2732.11 | 1180.0 -> 2732.11 | 1200.0 -> 2732.11 | 1220.0 -> 2732.11 | 1250.0 -> 2732.11
 
 ### discharge_deadline_hrs (feasibility)
 - **What**: Required discharge deadline (hrs) for a 65t 5052 charge
 - **Expected direction**: infeasible regime exists at short deadlines
-- **Observed**: [(2.0, False), (3.0, True), (4.0, True), (6.0, True), (9.0, True)]  -> ✅ matches
+- **Observed**: [(2.0, False), (3.0, False), (4.0, True), (6.0, True), (9.0, True)]  -> ✅ matches
 - **Benchmark**: Real median melt duration ~5.9hrs (production log); a very short deadline (e.g. 2hrs) for a 65t charge should be infeasible at reasonable roof limits.
-- **cum_gas_nm3 by level**: 2.0 -> 1418.73 | 3.0 -> 2365.69 | 4.0 -> 2390.34 | 6.0 -> 2724.46 | 9.0 -> 3478.05
-- **Notes**: deadline_met per level: {2.0: False, 3.0: True, 4.0: True, 6.0: True, 9.0: True}
+- **cum_gas_nm3 by level**: 2.0 -> 1418.73 | 3.0 -> 2170.31 | 4.0 -> 2407.64 | 6.0 -> 2732.11 | 9.0 -> 3478.05
+- **Notes**: deadline_met per level: {2.0: False, 3.0: False, 4.0: True, 6.0: True, 9.0: True}
 
 ### aluminum_price -> chosen excess_air_pct
 - **What**: aluminum_price (TWD/kg), gas_price fixed at 15
