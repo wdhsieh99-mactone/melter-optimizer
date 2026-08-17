@@ -2,14 +2,15 @@
 
 ## 執行成果總覽 (Executive Summary)
 
-依據審查計畫與討論共識，已完成 Git 安全存檔點並成功落實各項物理修正與跨平台優化，全部 32 項單元測試與敏感度分析全數 100% 通過。
+依據審查計畫與討論共識，已完成 Git 安全存檔點並成功落實各項物理修正、跨平台優化與分級權限隔離機制，全部 32 項單元測試與敏感度分析全數 100% 通過。
 
 ```mermaid
 graph LR
     GitSave["1. Git 安全存檔點 (dd64cd1)"] --> FixPath["2. 跨平台動態路徑修復"]
     FixPath --> FixPhys["3. 熱平衡供熱上限閉環 (第一定律)"]
     FixPhys --> FixEnc["4. Windows UTF-8 檔案編碼防護"]
-    FixEnc --> Verify["5. 32/32 單元測試與歷史回測驗證 (100% 通過)"]
+    FixEnc --> Auth["5. 歷史回測分頁權限隔離 (Web Service 安全防護)"]
+    Auth --> Verify["6. 32/32 單元測試與回測驗證 (100% 通過)"]
 ```
 
 ---
@@ -30,12 +31,18 @@ graph LR
 - **問題**：在繁體中文 Windows 環境下，預設檔案寫入採用 `cp950` 編碼，遇到符號（如 `✅`）時引發 `UnicodeEncodeError`。
 - **修正**：在 `sensitivity_analysis.py`、`calibration.py`、`physics_model.py`、`regenerator_model.py` 與 `app.py` 中所有 JSON / 報表檔案讀寫均明確宣告 `encoding='utf-8'`。
 
+### 4. 歷史回測分頁權限隔離與身分驗證 (`app.py`)
+- **功能**：
+  - **訪客模式（未登入）**：僅開放「即時單爐最佳化模擬」與「蓄熱燃燒手冊」；歷史回測分頁自動鎖定並遮蔽生產機密日報。
+  - **授權模式（輸入 Passcode）**：解鎖歷史回測分析、MFA 20 爐感測器積分比對與全廠 123 爐歷史回測明細。
+  - 支援側邊欄及分頁內直接登入/登出，預設授權碼包括 `rd2026`、`melter80t`、`mfx2026`、`admin888`，亦支援以環境變數 `MELTER_AUTH_PASSWORD` 覆寫。
+
 ---
 
 ## 驗證結果 (Verification & Quantitative Results)
 
 ### 1. 自動化單元測試 (`pytest`)
-- 測試套件：32 個測試案例全數通過 (`32 passed in 66.30s`)
+- 測試套件：32 個測試案例全數通過 (`32 passed in 85.10s`)
   - `tests/test_optimizer.py`: 11/11 PASSED
   - `tests/test_regenerator_model.py`: 7/7 PASSED
   - `tests/test_sensitivity.py`: 14/14 PASSED
