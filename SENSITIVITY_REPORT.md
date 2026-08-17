@@ -25,7 +25,7 @@ PLAN.md). This is a diagnostic pass -- findings are surfaced, not auto-fixed.
 | sp_roof_melt | decision_variable | ambiguous | increase | ➖ (context-dependent, see notes) | ✅ |
 | charged_weight_kg | furnace_input | increase | increase | ✅ matches | ✅ |
 | charged_weight_kg -> gas/tonne | furnace_input | decrease | decrease | ✅ matches | ➖ |
-| residual_weight_kg (marginal cost) | furnace_input | residual < fresh charge (per kg) | residual=-0.00381, fresh=0.01010 Nm3/kg | ✅ matches | ➖ |
+| residual_weight_kg (marginal cost) | furnace_input | residual < fresh charge (per kg) | residual=-0.00380, fresh=0.01019 Nm3/kg | ✅ matches | ➖ |
 | residual_weight_kg (fixed total mass) | furnace_input | with_residual < all_cold | True | ✅ matches | ➖ |
 | max_roof_sp_limit | optimizer_search | non_increase | flat | ✅ matches | ➖ |
 | discharge_deadline_hrs (feasibility) | optimizer_search | infeasible regime exists at short deadlines | [(2.0, False), (3.0, True), (4.0, True), (6.0, True), (9.0, True)] | ✅ matches | ➖ |
@@ -39,7 +39,7 @@ PLAN.md). This is a diagnostic pass -- findings are surfaced, not auto-fixed.
 - **Observed**: decrease  -> ✅ matches
 - **Benchmark**: Manual sec.1.3.1: 9,700 kcal/Nm3 (~40,585 kJ/Nm3). Higher LHV = same energy from fewer Nm3.
 - **Plausible magnitude**: ✅ yes
-- **cum_gas_nm3 by level**: 30000.0 -> 4884.77 | 36000.0 -> 4104.28 | 40585.0 -> 3649.45 | 45000.0 -> 3291.55 | 50000.0 -> 2962.40
+- **cum_gas_nm3 by level**: 30000.0 -> 4913.20 | 36000.0 -> 4128.14 | 40585.0 -> 3671.10 | 45000.0 -> 3311.57 | 50000.0 -> 2980.41
 
 ### HEARTH_AREA_M2 (instance override)
 - **What**: Bath radiating surface area (m^2), set via model.HEARTH_AREA_M2 = X
@@ -47,7 +47,7 @@ PLAN.md). This is a diagnostic pass -- findings are surfaced, not auto-fixed.
 - **Observed**: increase  -> ✅ matches
 - **Benchmark**: Manual sec.1.3.2: bath 10,500x6,300mm = 66.15 m^2. IMPORTANT -- initial hypothesis of "larger area -> less gas" was WRONG for this model as currently structured, confirmed by inspecting final_bath_temp_c across the sweep: at area=30 the bath only reaches 683.5C (undershoots 720 target, not enough transfer capacity in the fixed 4h-melt/2h-hold schedule); at area=45 it lands almost exactly on 720C; at area>=66.15 it OVERSHOOTS to the hardcoded 800C clamp. Because the Melt phase adds heat unconditionally regardless of current bath temperature (`or phase == "Melt"` in optimizer.py), a MORE effective transfer geometry just delivers (and burns gas for) MORE total heat within the fixed melt duration, most of it wasted as overshoot once transfer capacity exceeds what is needed. So "increase" is the CORRECT expected direction given the current fixed-duration, non-early-terminating Melt-phase design -- not a bug in itself, but worth knowing when interpreting sensitivity results for any parameter that boosts heat transfer rate (see emissivity_eff below, same mechanism).
 - **Plausible magnitude**: ✅ yes
-- **cum_gas_nm3 by level**: 30.0 -> 2124.30 | 45.0 -> 2821.70 | 66.2 -> 3649.45 | 90.0 -> 4625.61 | 120.0 -> 5683.97
+- **cum_gas_nm3 by level**: 30.0 -> 2136.21 | 45.0 -> 2838.54 | 66.2 -> 3671.10 | 90.0 -> 4652.20 | 120.0 -> 5708.04
 - **Notes**: FIXED: was previously an ~11x weaker response (only the convective term in optimizer.py respected this override) -- now spans the full range (area 30->120 moves cum_gas_nm3 by roughly the same magnitude as the module-level sweep used to show pre-fix), confirming radiant_heat_flux_kw() and dross_burnoff_rate_kg_hr() now correctly read self.HEARTH_AREA_M2.
 
 ### HEARTH_AREA_M2 (module patch, post-fix regression guard)
@@ -56,7 +56,7 @@ PLAN.md). This is a diagnostic pass -- findings are surfaced, not auto-fixed.
 - **Observed**: flat  -> ✅ matches
 - **Benchmark**: Post-fix expectation: formulas no longer read this module global directly, so patching it should not change simulate_trajectory() output at all.
 - **Plausible magnitude**: ✅ yes
-- **cum_gas_nm3 by level**: 30.0 -> 3649.45 | 45.0 -> 3649.45 | 66.2 -> 3649.45 | 90.0 -> 3649.45 | 120.0 -> 3649.45
+- **cum_gas_nm3 by level**: 30.0 -> 3671.10 | 45.0 -> 3671.10 | 66.2 -> 3671.10 | 90.0 -> 3671.10 | 120.0 -> 3671.10
 
 ### wall_loss_kw
 - **What**: Fixed standing refractory/shell heat loss (kW)
@@ -64,7 +64,7 @@ PLAN.md). This is a diagnostic pass -- findings are surfaced, not auto-fixed.
 - **Observed**: increase  -> ✅ matches
 - **Benchmark**: Calibrated value: 250kW (fixed, not fitted -- see PLAN.md). Plausible range for a 66m2 industrial furnace shell: tens to low hundreds of kW.
 - **Plausible magnitude**: ✅ yes
-- **cum_gas_nm3 by level**: 50.0 -> 3543.18 | 150.0 -> 3596.40 | 250.0 -> 3649.45 | 400.0 -> 3728.18 | 600.0 -> 3833.14
+- **cum_gas_nm3 by level**: 50.0 -> 3565.37 | 150.0 -> 3618.59 | 250.0 -> 3671.10 | 400.0 -> 3749.83 | 600.0 -> 3854.79
 
 ### emissivity_eff
 - **What**: Effective roof-to-bath radiative emissivity (0-1)
@@ -72,7 +72,7 @@ PLAN.md). This is a diagnostic pass -- findings are surfaced, not auto-fixed.
 - **Observed**: increase  -> ✅ matches
 - **Benchmark**: Physically bounded [0,1]; 0.45 default is a plausible mid-range effective value for a refractory-lined furnace with some view-factor losses. Same "increase" mechanism as HEARTH_AREA_M2 above: emissivity scales radiant transfer identically to area in radiant_heat_flux_kw(), so it hits the same fixed-Melt-duration overshoot behavior.
 - **Plausible magnitude**: ✅ yes
-- **cum_gas_nm3 by level**: 0.2 -> 2356.51 | 0.3 -> 3108.98 | 0.5 -> 3649.45 | 0.6 -> 4459.80 | 0.8 -> 5432.26
+- **cum_gas_nm3 by level**: 0.2 -> 2369.46 | 0.3 -> 3127.90 | 0.5 -> 3671.10 | 0.6 -> 4485.54 | 0.8 -> 5454.39
 
 ### efficiency_scale
 - **What**: Fitted multiplier on combustion_efficiency()
@@ -88,7 +88,7 @@ PLAN.md). This is a diagnostic pass -- findings are surfaced, not auto-fixed.
 - **Observed**: increase  -> ✅ matches
 - **Benchmark**: Calibrated to 0.8506 against real yield loss (median real loss ~1.2%, mean ~3.5%, see MELTER_KNOWLEDGE.md sec.8.3). Dross for a 65t heat should stay well under ~10% (~6,500kg).
 - **Plausible magnitude**: ✅ yes
-- **cum_gas_nm3 by level**: 0.1 -> 3649.45 | 0.3 -> 3649.45 | 0.5 -> 3649.45 | 0.8 -> 3649.45 | 1.5 -> 3649.45
+- **cum_gas_nm3 by level**: 0.1 -> 3671.10 | 0.3 -> 3671.10 | 0.5 -> 3671.10 | 0.8 -> 3671.10 | 1.5 -> 3671.10
 
 ### burnoff_ea
 - **What**: Dross Arrhenius activation energy (J/mol)
@@ -96,7 +96,7 @@ PLAN.md). This is a diagnostic pass -- findings are surfaced, not auto-fixed.
 - **Observed**: decrease  -> ✅ matches
 - **Benchmark**: exp(-Ea/RT) is strictly decreasing in Ea for any finite T>0 with k0 fixed, so dross should monotonically DECREASE as Ea rises (not "become more sensitive" -- that would need k0 re-scaled too). Calibrated default Ea=45,000 gives ~1,299kg (~2%, plausible); Ea=15,000 now caps at ~12,412kg (~19% of a 65t charge) instead of the pre-fix 26,809kg.
 - **Plausible magnitude**: ❌ NO
-- **cum_gas_nm3 by level**: 15000.0 -> 3649.45 | 30000.0 -> 3649.45 | 45000.0 -> 3649.45 | 60000.0 -> 3649.45 | 80000.0 -> 3649.45
+- **cum_gas_nm3 by level**: 15000.0 -> 3671.10 | 30000.0 -> 3671.10 | 45000.0 -> 3671.10 | 60000.0 -> 3671.10 | 80000.0 -> 3671.10
 - **Notes**: Physical ceiling now enforced (MAX_PLAUSIBLE_DROSS_RATE_KG_HR, derived from data_loader.py's own real-data 20%-of-charge plausible yield-loss bound) -- nonsensical (>charge-weight) dross is no longer possible regardless of burnoff_ea/k0. This sweep still flags low-Ea as non-plausible against its own tighter 10% bar, which is a separate, intentionally-stricter "normal operation" check, not a sign the physical guardrail is missing.
 
 ### STOICH_AIR_GAS_RATIO
@@ -104,7 +104,7 @@ PLAN.md). This is a diagnostic pass -- findings are surfaced, not auto-fixed.
 - **Expected direction**: flat
 - **Observed**: flat  -> ✅ matches
 - **Benchmark**: Correctly has NO effect on cost/gas outputs -- it is not (and should not be) part of simulate_trajectory()'s combustion model; it only feeds data_loader.py's separate, already-caveated directional excess-air estimate from real sensor flow tags.
-- **cum_gas_nm3 by level**: 7.0 -> 3649.45 | 8.5 -> 3649.45 | 9.5 -> 3649.45 | 11.0 -> 3649.45 | 13.0 -> 3649.45
+- **cum_gas_nm3 by level**: 7.0 -> 3671.10 | 8.5 -> 3671.10 | 9.5 -> 3671.10 | 11.0 -> 3671.10 | 13.0 -> 3671.10
 
 ### alloy_name (dross ordering)
 - **What**: Alloy choice, ascending Mg content: pure Al -> 6xxx -> 5052 -> 5083 -> 5182
@@ -112,7 +112,7 @@ PLAN.md). This is a diagnostic pass -- findings are surfaced, not auto-fixed.
 - **Observed**: increase  -> ✅ matches
 - **Benchmark**: Manual: Mg alloys (5052/5182/5083) dross 1.8-2.2x pure Al; ALLOY_PROPERTIES dross_mult table: 99.7=1.0, 6061=1.2, 5052=1.8, 5083=2.1, 5182=2.2.
 - **Plausible magnitude**: ✅ yes
-- **cum_gas_nm3 by level**: 99.7 -> 3646.92 | 6061 -> 3654.80 | 5052 -> 3649.45 | 5083 -> 3650.53 | 5182 -> 3648.02
+- **cum_gas_nm3 by level**: 99.7 -> 3668.55 | 6061 -> 3676.51 | 5052 -> 3671.10 | 5083 -> 3672.19 | 5182 -> 3669.66
 
 ### excess_air_pct -> gas
 - **What**: Excess combustion air (%)
@@ -120,7 +120,7 @@ PLAN.md). This is a diagnostic pass -- findings are surfaced, not auto-fixed.
 - **Observed**: increase  -> ✅ matches
 - **Benchmark**: Manual sec.1.3.8: 15% max excess air at high fire (HMI range 0-30%).
 - **Plausible magnitude**: ✅ yes
-- **cum_gas_nm3 by level**: 5.0 -> 3625.97 | 10.0 -> 3625.97 | 15.0 -> 3649.45 | 22.5 -> 3793.33 | 30.0 -> 3992.04
+- **cum_gas_nm3 by level**: 5.0 -> 3625.97 | 10.0 -> 3625.97 | 15.0 -> 3671.10 | 22.5 -> 3824.65 | 30.0 -> 4030.15
 
 ### excess_air_pct -> flue O2%
 - **What**: Excess combustion air (%)
@@ -128,7 +128,7 @@ PLAN.md). This is a diagnostic pass -- findings are surfaced, not auto-fixed.
 - **Observed**: increase  -> ✅ matches
 - **Benchmark**: Manual sec.1.4.20/21 (AT104): practical O2 target 1-3%, HMI setpoint range 1-5%, default 3%. Model formula at 15% excess air should land near the low end of that band.
 - **Plausible magnitude**: ✅ yes
-- **cum_gas_nm3 by level**: 5.0 -> 3625.97 | 10.0 -> 3625.97 | 15.0 -> 3649.45 | 22.5 -> 3793.33 | 30.0 -> 3992.04
+- **cum_gas_nm3 by level**: 5.0 -> 3625.97 | 10.0 -> 3625.97 | 15.0 -> 3671.10 | 22.5 -> 3824.65 | 30.0 -> 4030.15
 
 ### target_bath_temp_c
 - **What**: Target tap-out metal temperature (C)
@@ -136,7 +136,7 @@ PLAN.md). This is a diagnostic pass -- findings are surfaced, not auto-fixed.
 - **Observed**: flat  -> ❌ MISMATCH
 - **Benchmark**: Manual sec.1.3.2: metal temperature range 690-750C in service.
 - **Plausible magnitude**: ✅ yes
-- **cum_gas_nm3 by level**: 690.0 -> 3649.45 | 705.0 -> 3649.45 | 720.0 -> 3649.45 | 735.0 -> 3649.45 | 750.0 -> 3649.45
+- **cum_gas_nm3 by level**: 690.0 -> 3671.10 | 705.0 -> 3671.10 | 720.0 -> 3671.10 | 735.0 -> 3671.10 | 750.0 -> 3671.10
 - **Notes**: final_bath_temp_c is pegged at the 800C hard clamp for ALL 5 levels with this baseline schedule (sp_roof_melt=1150C, 4h melt phase) -- the schedule overshoots every tested target, so target_bath_temp_c cannot influence cum_gas_nm3 here. Not a flaw in the optimizer (which rejects overshooting/undershooting candidates), but shows simulate_trajectory() itself has no target-aware early throttling during the Melt phase -- it always burns to the commanded roof setpoint regardless of bath state.
 
 ### sp_roof_melt
@@ -145,7 +145,7 @@ PLAN.md). This is a diagnostic pass -- findings are surfaced, not auto-fixed.
 - **Observed**: increase  -> ➖ (context-dependent, see notes)
 - **Benchmark**: Manual: "higher roof temp = quicker melt rate but greater refractory strain"; ceiling commonly set near 1200C (app.py default). Effect on TOTAL gas over a fixed duration is not obvious a priori -- efficiency drops but heat delivery speeds up.
 - **Plausible magnitude**: ✅ yes
-- **cum_gas_nm3 by level**: 1120.0 -> 3362.60 | 1150.0 -> 3649.45 | 1180.0 -> 3950.38 | 1210.0 -> 4251.43 | 1240.0 -> 4548.77
+- **cum_gas_nm3 by level**: 1120.0 -> 3379.04 | 1150.0 -> 3671.10 | 1180.0 -> 3974.18 | 1210.0 -> 4277.31 | 1240.0 -> 4576.75
 
 ### charged_weight_kg
 - **What**: Fresh charge weight (kg)
@@ -153,19 +153,19 @@ PLAN.md). This is a diagnostic pass -- findings are surfaced, not auto-fixed.
 - **Observed**: increase  -> ✅ matches
 - **Benchmark**: Real production median charge ~65.5t (25th-75th pct ~55.8-70.9t); furnace nameplate 80t.
 - **Plausible magnitude**: ✅ yes
-- **cum_gas_nm3 by level**: 40000.0 -> 3390.15 | 55000.0 -> 3547.30 | 65000.0 -> 3649.45 | 75000.0 -> 3750.72 | 85000.0 -> 3952.16
+- **cum_gas_nm3 by level**: 40000.0 -> 3409.75 | 55000.0 -> 3568.07 | 65000.0 -> 3671.10 | 75000.0 -> 3773.31 | 85000.0 -> 3975.12
 
 ### charged_weight_kg -> gas/tonne
 - **What**: Fresh charge weight (kg), gas per tonne
 - **Expected direction**: decrease
 - **Observed**: decrease  -> ✅ matches
 - **Benchmark**: Economies of scale: fixed wall_loss_kw spread over more mass at higher charge weight.
-- **cum_gas_nm3 by level**: 40000.0 -> 84.75 | 55000.0 -> 64.50 | 65000.0 -> 56.15 | 75000.0 -> 50.01 | 85000.0 -> 46.50
+- **cum_gas_nm3 by level**: 40000.0 -> 85.24 | 55000.0 -> 64.87 | 65000.0 -> 56.48 | 75000.0 -> 50.31 | 85000.0 -> 46.77
 
 ### residual_weight_kg (marginal cost)
 - **What**: Marginal Nm3 gas per kg: +5t residual (on top) vs. +5t fresh charge
 - **Expected direction**: residual < fresh charge (per kg)
-- **Observed**: residual=-0.00381, fresh=0.01010 Nm3/kg  -> ✅ matches
+- **Observed**: residual=-0.00380, fresh=0.01019 Nm3/kg  -> ✅ matches
 - **Benchmark**: Residual arrives already near liquidus; should need less new gas per kg than cold fresh scrap starting at 25C.
 - **cum_gas_nm3 by level**: +5t residual -> -0.00 | +5t fresh charge -> 0.01
 
@@ -174,7 +174,7 @@ PLAN.md). This is a diagnostic pass -- findings are surfaced, not auto-fixed.
 - **Expected direction**: with_residual < all_cold
 - **Observed**: True  -> ✅ matches
 - **Benchmark**: Field practice: ~5-10t hot residual heel typically left in furnace (MELTER_KNOWLEDGE.md addendum). Also covered by a pytest regression test.
-- **cum_gas_nm3 by level**: all_cold_65t -> 3649.45 | 58t_charge_plus_7t_residual -> 3550.79
+- **cum_gas_nm3 by level**: all_cold_65t -> 3671.10 | 58t_charge_plus_7t_residual -> 3571.88
 
 ### max_roof_sp_limit
 - **What**: Roof temperature safety ceiling (C)
@@ -188,7 +188,7 @@ PLAN.md). This is a diagnostic pass -- findings are surfaced, not auto-fixed.
 - **Expected direction**: infeasible regime exists at short deadlines
 - **Observed**: [(2.0, False), (3.0, True), (4.0, True), (6.0, True), (9.0, True)]  -> ✅ matches
 - **Benchmark**: Real median melt duration ~5.9hrs (production log); a very short deadline (e.g. 2hrs) for a 65t charge should be infeasible at reasonable roof limits.
-- **cum_gas_nm3 by level**: 2.0 -> 1411.69 | 3.0 -> 2361.32 | 4.0 -> 2390.34 | 6.0 -> 2724.46 | 9.0 -> 3478.05
+- **cum_gas_nm3 by level**: 2.0 -> 1418.73 | 3.0 -> 2365.69 | 4.0 -> 2390.34 | 6.0 -> 2724.46 | 9.0 -> 3478.05
 - **Notes**: deadline_met per level: {2.0: False, 3.0: True, 4.0: True, 6.0: True, 9.0: True}
 
 ### aluminum_price -> chosen excess_air_pct
