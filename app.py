@@ -40,14 +40,17 @@ def finalize_chart_layout(fig, height=520, base_size=12, title_size=18, axis_tit
             orientation='h', yanchor='top', y=-0.24, xanchor='center', x=0.5,
             font=dict(size=round(base_size * CHART_FONT_SCALE)),
         ),
+        hovermode="x unified",
     )
     fig.update_xaxes(
         title_font=dict(size=round(axis_title_size * CHART_FONT_SCALE)),
         tickfont=dict(size=round(base_size * CHART_FONT_SCALE)),
+        hoverformat='.1f',
     )
     fig.update_yaxes(
         title_font=dict(size=round(axis_title_size * CHART_FONT_SCALE)),
         tickfont=dict(size=round(base_size * CHART_FONT_SCALE)),
+        hoverformat='.1f',
     )
     return fig
 
@@ -196,7 +199,17 @@ def main():
     target_bath_temp = st.sidebar.slider("目標出液湯溫 (°C)", min_value=680.0, max_value=760.0, value=720.0, step=5.0)
     max_roof_sp_limit = st.sidebar.slider("頂頭最高安全溫度天花板 (°C)", min_value=1100.0, max_value=1250.0, value=1200.0, step=10.0)
     
-    st.sidebar.subheader("2. 空氣燃氣比與殘氧設定")
+    st.sidebar.subheader("2. 傳統操作基準模式設定 (Traditional Practice)")
+    baseline_roof_sp = st.sidebar.slider(
+        "傳統固定頂溫設點 (°C)", min_value=1000.0, max_value=1200.0, value=1100.0, step=10.0,
+        help="傳統熔化前期以固定爐頂溫度設點全火加熱 (例如 1100°C)。"
+    )
+    baseline_switch_hrs = st.sidebar.slider(
+        "傳統改鋁湯控制時間 (小時)", min_value=1.0, max_value=8.0, value=4.5, step=0.5,
+        help="現場操作經驗：約 4.5 小時查看熔解狀況後，由爐頂溫控制切換為鋁湯溫度控制模式。"
+    )
+
+    st.sidebar.subheader("3. 空氣燃氣比與殘氧設定")
     excess_air_pct = st.sidebar.slider("基準過剩空氣率 Excess Air (%)", min_value=5.0, max_value=30.0, value=25.0, step=1.0)
     
     if hasattr(model, 'calculate_flue_oxygen_pct'):
@@ -206,7 +219,7 @@ def main():
         est_o2 = (21.0 * x_frac) / (1.0 + x_frac * 1.05)
     st.sidebar.caption(f"預估煙道殘氧量 (AT104): **{est_o2:.2f}% O₂**")
     
-    st.sidebar.subheader("3. 能源與金屬價格")
+    st.sidebar.subheader("4. 能源與金屬價格")
     gas_price = st.sidebar.number_input("天然氣單價 (TWD / Nm³)", min_value=5.0, max_value=50.0, value=15.0, step=1.0)
     aluminum_price = st.sidebar.number_input("鋁錠/金屬單價 (TWD / kg)", min_value=30.0, max_value=150.0, value=75.0, step=5.0)
     
@@ -229,6 +242,8 @@ def main():
                 residual_weight_kg=residual_weight_kg,
                 discharge_deadline_hrs=target_duration_hrs,
                 alloy_name=selected_alloy,
+                baseline_roof_sp=baseline_roof_sp,
+                baseline_switch_hrs=baseline_switch_hrs,
                 baseline_excess_air_pct=excess_air_pct,
                 target_bath_temp_c=target_bath_temp,
                 max_roof_sp_limit=max_roof_sp_limit,
@@ -297,17 +312,43 @@ def main():
         fig1 = go.Figure()
         
         # Baseline curves
-        fig1.add_trace(go.Scatter(x=df_base['time_hrs'], y=df_base['sp_roof_c'], name='傳統固定頂溫設點 (1100°C)', line=dict(color='#E53935', dash='dash')))
-        fig1.add_trace(go.Scatter(x=df_base['time_hrs'], y=df_base['bath_temp_c'], name='傳統鋁湯溫度 (TT200)', line=dict(color='#D81B60', width=2)))
+        fig1.add_trace(go.Scatter(
+            x=df_base['time_hrs'], y=df_base['sp_roof_c'],
+            name=f'傳統頂溫設點 ({baseline_roof_sp:.0f}°C → {baseline_switch_hrs:.1f}h改湯溫)',
+            line=dict(color='#E53935', dash='dash')
+        ))
+        fig1.add_trace(go.Scatter(
+            x=df_base['time_hrs'], y=df_base['bath_temp_c'],
+            name='傳統鋁湯溫度 (TT200)',
+            line=dict(color='#D81B60', width=2)
+        ))
         
         # Optimal curves
-        fig1.add_trace(go.Scatter(x=df_opt['time_hrs'], y=df_opt['sp_roof_c'], name='最佳化頂溫設點 SP_roof(t)', line=dict(color='#1E88E5', width=3)))
-        fig1.add_trace(go.Scatter(x=df_opt['time_hrs'], y=df_opt['roof_temp_c'], name='最佳化頂頭測溫 (TT201)', line=dict(color='#64B5F6', width=2)))
-        fig1.add_trace(go.Scatter(x=df_opt['time_hrs'], y=df_opt['bath_temp_c'], name='最佳化鋁湯溫度 (TT200)', line=dict(color='#43A047', width=3)))
+        fig1.add_trace(go.Scatter(
+            x=df_opt['time_hrs'], y=df_opt['sp_roof_c'],
+            name='最佳化頂溫設點 SP_roof(t)',
+            line=dict(color='#1E88E5', width=3)
+        ))
+        fig1.add_trace(go.Scatter(
+            x=df_opt['time_hrs'], y=df_opt['roof_temp_c'],
+            name='最佳化頂頭測溫 (TT201)',
+            line=dict(color='#64B5F6', width=2)
+        ))
+        fig1.add_trace(go.Scatter(
+            x=df_opt['time_hrs'], y=df_opt['bath_temp_c'],
+            name='最佳化鋁湯溫度 (TT200)',
+            line=dict(color='#43A047', width=3)
+        ))
         
         # Threshold lines
         fig1.add_hline(y=props['liquidus'], line_dash="dash", line_color="gray", annotation_text=f"{selected_alloy} 液相線 {props['liquidus']}°C")
         fig1.add_hline(y=target_bath_temp, line_dash="dot", line_color="green", annotation_text=f"目標出湯溫度 {target_bath_temp}°C")
+
+        # Vertical line at the traditional bath control switchover point
+        fig1.add_vline(
+            x=baseline_switch_hrs, line_dash="dot", line_color="#E53935", line_width=1.5,
+            annotation_text=f"傳統改湯溫 {baseline_switch_hrs:.1f}h", annotation_position="bottom right"
+        )
 
         # Vertical line at the required discharge (tap-out) deadline.
         fig1.add_vline(
@@ -335,7 +376,7 @@ def main():
             ))
 
         fig1.update_layout(
-            title=f"鋁種 [{selected_alloy}] 升溫動態軌跡 (傳統固定 1100°C 模式 vs. 最佳化階梯模式)",
+            title=f"鋁種 [{selected_alloy}] 升溫動態軌跡 (傳統 {baseline_roof_sp:.0f}°C/{baseline_switch_hrs:.1f}h 模式 vs. 最佳化階梯模式)",
             xaxis_title="熔煉時間 (小時)",
             yaxis_title="溫度 (°C)",
             hovermode="x unified",

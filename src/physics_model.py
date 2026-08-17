@@ -169,11 +169,11 @@ class MelterPhysicsModel:
         return (21.0 * x_frac) / (1.0 + x_frac * 1.05)
 
     def radiant_heat_flux_kw(self, roof_temp_c: float, bath_temp_c: float) -> float:
-        """Calculates radiant heat transfer rate from roof refractory to bath surface (kW)."""
+        """Calculates radiant heat transfer rate between roof refractory and bath surface (kW).
+        Positive when heat flows roof -> bath; negative when bath is hotter than roof and radiates out."""
         t_roof_k = roof_temp_c + 273.15
         t_bath_k = bath_temp_c + 273.15
-        flux = STEFAN_BOLTZMANN * self.emissivity_eff * self.HEARTH_AREA_M2 * (t_roof_k**4 - t_bath_k**4)
-        return max(0.0, flux)
+        return STEFAN_BOLTZMANN * self.emissivity_eff * self.HEARTH_AREA_M2 * (t_roof_k**4 - t_bath_k**4)
 
     def dross_burnoff_rate_kg_hr(
         self,

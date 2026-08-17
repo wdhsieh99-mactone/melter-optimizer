@@ -73,7 +73,6 @@ class HeatingCurveOptimizer:
         total_weight_kg = charged_weight_kg + residual_weight_kg
         cap_solid_kj = total_weight_kg * cp_solid * (solidus - initial_bath_temp_c)
         cap_latent_kj = total_weight_kg * latent_h
-        cap_liquid_kj = total_weight_kg * cp_liq * (target_bath_temp_c - liquidus)
 
         def energy_to_bath_temp(energy_kj: float) -> float:
             if energy_kj < cap_solid_kj:
@@ -83,14 +82,13 @@ class HeatingCurveOptimizer:
                 return solidus + frac * (liquidus - solidus)
             else:
                 liquid_energy_kj = energy_kj - cap_solid_kj - cap_latent_kj
-                if cap_liquid_kj > 0:
-                    return min(800.0, liquidus + (liquid_energy_kj / cap_liquid_kj) * (target_bath_temp_c - liquidus))
-                return target_bath_temp_c
+                # Pure physical metallurgical liquid sensible heat equation without artificial clamp:
+                return liquidus + liquid_energy_kj / (total_weight_kg * cp_liq)
 
         # The residual heel arrives already carrying its own enthalpy (from initial_bath_temp_c up
         # to residual_temp_c) -- it doesn't need to be heated from cold like the fresh charge does.
         # This "head start" is expressed on the SAME total_weight_kg staged-energy basis as
-        # cap_solid/cap_latent/cap_liquid above, so the two combine consistently.
+        # cap_solid/cap_latent above, so the two combine consistently.
         if residual_weight_kg > 0:
             current_energy_kj = self.model.calculate_theoretical_energy(
                 weight_kg=residual_weight_kg,
@@ -124,32 +122,21 @@ class HeatingCurveOptimizer:
             t_hr = step * dt_hrs
             times.append(t_hr)
             
-            # Phase and Burner Mode Selection (2 pairs = 4 burners active during melt; 1 pair duty toggle during hold)
-            # NOTE: pair switching is tied to phase (Melt=dual, Hold=single) as a simplified proxy
-            # for the manual's real mechanism, which is an output-level hysteresis with timers on
-            # the roof PID's control output (sec 1.4.25.1) -- not a hard time/phase boundary. Since
-            # roof controller output is naturally low once Hold mode's bath-error cascade (below)
-            # relaxes the setpoint, this phase-based proxy tracks the real behavior reasonably, but
-            # it will not reproduce transient re-engagement of the second pair the way the real
-            # hysteresis+timer logic could.
+            # Phase and Burner Mode Selection
+            # Melt phase: controlled by roof temperature setpoint (dual pair firing, up to 2 flames)
+            # Hold phase: controlled by bath temperature feedback (single pair duty toggle, 1 flame)
             if t_hr < t_switch_hrs:
                 sp_roof = sp_roof_melt
                 phase = 'Melt'
-                # "Dual Pair" = both burner pairs active, NOT 4 simultaneous flames: manual
-                # sec.1.4.56 is explicit that within each pair only one burner fires at a time
-                # while its twin exhausts/preheats, so at most 2 flames burn at once (one per
-                # pair) even in this highest-firing mode.
                 burner_mode = 'Dual Pair (up to 2 Flames Alternating)'
                 max_gas_limit = MAX_GAS_FLOW_DUAL_PAIR
             else:
-                # Bath-error-driven roof cascade approximating the manual's real Bath Hold
-                # control (sec 1.4.25): bath error (target - current), clamped to +-10C, scales
-                # the roof setpoint between a low idle floor and the ceiling `sp_roof_hold`. This
-                # means roof heat naturally tapers off as the bath converges to target instead of
-                # holding a flat high setpoint for the rest of the heat.
-                roof_sp_hold_floor = 700.0  # manual's example cascade chart: ~700C at zero bath error
-                bath_err = np.clip(target_bath_temp_c - current_bath_temp, 0.0, 10.0)
-                sp_roof = roof_sp_hold_floor + (bath_err / 10.0) * (sp_roof_hold - roof_sp_hold_floor)
+                # Bath temperature control mode (Hold mode):
+                # Target bath temp is the baseline holding floor. When bath error > 0, roof setpoint scales
+                # up towards sp_roof_hold to add heat; when bath error <= 0, roof setpoint rests at target_bath_temp_c.
+                roof_sp_hold_floor = target_bath_temp_c
+                bath_err = np.clip(target_bath_temp_c - current_bath_temp, 0.0, 15.0)
+                sp_roof = roof_sp_hold_floor + (bath_err / 15.0) * (sp_roof_hold - roof_sp_hold_floor)
                 phase = 'Hold'
                 burner_mode = 'Single Pair (1 Flame Alternating)'
                 max_gas_limit = MAX_GAS_FLOW_SINGLE_PAIR
@@ -164,23 +151,33 @@ class HeatingCurveOptimizer:
             current_roof_temp += np.clip(roof_err * 0.25, -k_roof_response, k_roof_response)
             roof_temps.append(current_roof_temp)
             
-            # Heat transfer to bath (Radiant + Convection)
+            # Heat transfer between roof/combustion space and bath (Radiant + Convection) - Bidirectional
             q_rad_kw = self.model.radiant_heat_flux_kw(current_roof_temp, current_bath_temp)
-            q_conv_kw = 1.2 * self.model.HEARTH_AREA_M2 * max(0.0, current_roof_temp - current_bath_temp) * 0.015 # kW
+            q_conv_kw = 1.2 * self.model.HEARTH_AREA_M2 * (current_roof_temp - current_bath_temp) * 0.015 # kW
             q_total_kw = q_rad_kw + q_conv_kw
             
             # Combustion efficiency considering excess air ratio
             eff = self.model.combustion_efficiency(current_roof_temp, excess_air_pct=excess_air_pct)
-            q_combustion_needed_kw = q_total_kw / eff + self.model.wall_loss_kw
-            gas_flow_unclamp = (q_combustion_needed_kw * 3600.0) / self.model.GAS_LHV if self.model.GAS_LHV > 0 else 0.0
-            gas_flow_nm3h = min(max_gas_limit, gas_flow_unclamp)
             
-            # Energy balance: heat transferred to bath cannot exceed available burner output minus wall loss
-            q_combustion_actual_kw = (gas_flow_nm3h * self.model.GAS_LHV) / 3600.0 if self.model.GAS_LHV > 0 else 0.0
-            q_bath_max_kw = max(0.0, (q_combustion_actual_kw - self.model.wall_loss_kw) * eff)
-            q_bath_actual_kw = min(q_total_kw, q_bath_max_kw)
-            q_step_kj = q_bath_actual_kw * (dt_mins * 60.0)
+            if q_total_kw > 0:
+                # Heat flowing from roof into bath
+                q_combustion_needed_kw = q_total_kw / eff + self.model.wall_loss_kw
+                gas_flow_unclamp = (q_combustion_needed_kw * 3600.0) / self.model.GAS_LHV if self.model.GAS_LHV > 0 else 0.0
+                gas_flow_nm3h = min(max_gas_limit, gas_flow_unclamp)
+                
+                # Energy balance: heat transferred to bath cannot exceed available burner output minus wall loss
+                q_combustion_actual_kw = (gas_flow_nm3h * self.model.GAS_LHV) / 3600.0 if self.model.GAS_LHV > 0 else 0.0
+                q_bath_max_kw = max(0.0, (q_combustion_actual_kw - self.model.wall_loss_kw) * eff)
+                q_bath_actual_kw = min(q_total_kw, q_bath_max_kw)
+            else:
+                # Bath is hotter than roof: bath radiates/convects heat out to roof/exhaust (cooling)
+                # Minimum holding fire to offset standing wall losses
+                q_combustion_needed_kw = self.model.wall_loss_kw
+                gas_flow_unclamp = (q_combustion_needed_kw * 3600.0) / self.model.GAS_LHV if self.model.GAS_LHV > 0 else 0.0
+                gas_flow_nm3h = min(max_gas_limit, max(50.0, gas_flow_unclamp))
+                q_bath_actual_kw = q_total_kw  # Negative heat transfer (bath cooling)
 
+            q_step_kj = q_bath_actual_kw * (dt_mins * 60.0)
             gas_step_nm3 = gas_flow_nm3h * dt_hrs
             cumulative_gas_nm3 += gas_step_nm3
             
@@ -196,10 +193,8 @@ class HeatingCurveOptimizer:
             dross_step_kg = dross_rate_kghr * dt_hrs
             cumulative_dross_kg += dross_step_kg
             
-            # Bath state progression
-            if current_bath_temp < target_bath_temp_c or phase == 'Melt':
-                current_energy_kj += q_step_kj
-
+            # Bath state progression (dynamic energy accumulation and dissipation)
+            current_energy_kj += q_step_kj
             current_bath_temp = energy_to_bath_temp(current_energy_kj)
 
             bath_temps.append(current_bath_temp)
@@ -237,19 +232,21 @@ class HeatingCurveOptimizer:
         target_duration_hrs: float,
         alloy_name: str = '5052',
         baseline_roof_sp: float = 1100.0,
+        baseline_switch_hrs: Optional[float] = None,
         baseline_excess_air_pct: float = 25.0,
         target_bath_temp_c: float = 720.0,
         dt_mins: float = 1.0,
         residual_weight_kg: float = 0.0,
         residual_temp_c: Optional[float] = None,
     ) -> Tuple[pd.DataFrame, Dict[str, float]]:
-        """Simulates baseline plant practice (fixed roof SP 1100°C, 25% excess air)."""
-        t_switch_hrs = target_duration_hrs * 0.90
+        """Simulates baseline plant practice (fixed roof SP, e.g. 1100°C for ~4.5h, then switches to bath temp control)."""
+        if baseline_switch_hrs is None:
+            baseline_switch_hrs = min(4.5, target_duration_hrs * 0.75)
         return self.simulate_trajectory(
             charged_weight_kg=charged_weight_kg,
             target_duration_hrs=target_duration_hrs,
             sp_roof_melt=baseline_roof_sp,
-            t_switch_hrs=t_switch_hrs,
+            t_switch_hrs=baseline_switch_hrs,
             sp_roof_hold=1020.0,
             alloy_name=alloy_name,
             excess_air_pct=baseline_excess_air_pct,
@@ -264,6 +261,8 @@ class HeatingCurveOptimizer:
         charged_weight_kg: float,
         discharge_deadline_hrs: float,
         alloy_name: str = '5052',
+        baseline_roof_sp: float = 1100.0,
+        baseline_switch_hrs: Optional[float] = None,
         baseline_excess_air_pct: float = 20.0,
         target_bath_temp_c: float = 720.0,
         max_roof_sp_limit: float = 1200.0,
@@ -276,11 +275,6 @@ class HeatingCurveOptimizer:
         discharge_deadline_hrs (a hard constraint -- the operator's required tap-out time, not
         a free variable). Candidates that miss the deadline are excluded from consideration
         entirely, never merely penalized, so a returned result is always deadline-feasible.
-
-        residual_weight_kg: hot carry-in heel (前爐殘湯) left in the furnace from the previous
-        heat, on top of charged_weight_kg -- see simulate_trajectory() for details. Defaults to
-        0.0 for backward compatibility; pass the real field figure (~5-10 tonnes for this
-        furnace) to get an accurate cost estimate.
         """
         best_cost = float('inf')
         best_params = None
@@ -324,20 +318,22 @@ class HeatingCurveOptimizer:
 
         if best_params is None:
             # No candidate in the search grid met the deadline at max_roof_sp_limit -- fall
-            # back to the hottest/leanest schedule (still may miss the deadline; summary will
-            # reflect that so the caller/UI can warn the operator instead of silently reporting
-            # a false "optimal").
+            # back to the hottest/leanest schedule
             best_df_sim, best_summary = self.run_baseline_scenario(
                 charged_weight_kg, discharge_deadline_hrs, alloy_name=alloy_name,
+                baseline_roof_sp=baseline_roof_sp, baseline_switch_hrs=baseline_switch_hrs,
                 baseline_excess_air_pct=baseline_excess_air_pct, dt_mins=dt_mins,
                 residual_weight_kg=residual_weight_kg, residual_temp_c=residual_temp_c,
+                target_bath_temp_c=target_bath_temp_c,
             )
             best_params = (max_roof_sp_limit, discharge_deadline_hrs * 0.85, 1000.0, baseline_excess_air_pct)
 
         df_base, summary_base = self.run_baseline_scenario(
             charged_weight_kg, discharge_deadline_hrs, alloy_name=alloy_name,
+            baseline_roof_sp=baseline_roof_sp, baseline_switch_hrs=baseline_switch_hrs,
             baseline_excess_air_pct=baseline_excess_air_pct, dt_mins=dt_mins,
             residual_weight_kg=residual_weight_kg, residual_temp_c=residual_temp_c,
+            target_bath_temp_c=target_bath_temp_c,
         )
         
         cost_savings_twd = summary_base['total_cost'] - best_summary['total_cost']
