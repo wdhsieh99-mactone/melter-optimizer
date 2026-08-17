@@ -2,36 +2,42 @@
 
 ## 執行成果總覽 (Executive Summary)
 
-依據實際現場冶金工藝（**前期固定頂溫點火 $\rightarrow$ 約 4.5 小時查看熔解後改鋁湯溫度控制**），已完成傳統基準模式重構、熱力學雙向熱傳平衡閉環、圖表小數第一位格式化，並通過全套 32 項單元測試與歷史回測驗證。
+依據實際現場冶金工藝（**前期固定頂溫點火 $\rightarrow$ 約 4.5 小時查看熔解後改鋁湯溫度控制**），已完成傳統基準模式重構、熱力學雙向熱傳平衡閉環、圖表小數第一位格式化，並於計算結果首區新增**傳統模式基準卡片、最佳化效益卡片與全指標詳細對照表**。
 
 ```mermaid
 graph TD
     Field["現場操作工藝：4.5h 檢查熔解後改鋁湯控制"] --> RefactorBase["1. 傳統模式重構：支援頂溫設點與改湯溫時間輸入"]
-    RefactorBase --> BidirHeat["2. 雙向輻射與對流熱傳平衡 (移除 800°C 截斷與負熱通量遮蔽)"]
-    BidirHeat --> Cascade["3. 鋁湯溫度串級保溫控制 (以目標湯溫 720°C 為平衡底限)"]
-    Cascade --> HoverFmt["4. Plotly 游標 Tooltip 統一顯示至小數點後第 1 位"]
+    RefactorBase --> KPICards["2. 傳統基準 vs. 最佳化效益卡片 (雙排 10 張 KPI + 詳細對照表)"]
+    KPICards --> BidirHeat["3. 雙向輻射與對流熱傳平衡 (移除 800°C 截斷與負熱通量遮蔽)"]
+    BidirHeat --> HoverFmt["4. Plotly 游標 Tooltip 統一顯示至小數點後第 1 位"]
     HoverFmt --> Verify["5. 32/32 pytest 單元測試 & 歷史真實回測驗證 (100% 通過)"]
 ```
 
 ---
 
-## 修正項目與物理機制 (Modifications & Physics)
+## 介面與功能特色 (UI & Feature Enhancements)
 
-### 1. 傳統操作模式重構 (Traditional 2-Stage Practice)
-- **實務背景**：現場在熔化前期以固定高溫頂溫點火（如 1100°C），約 4.5 小時開爐門查看是否全融，確認熔解後立即切換為「鋁湯溫度控制模式 (Bath Temp Control)」，避免高溫過熱。
-- **介面與功能調整**：
-  - 於側邊欄「2. 傳統操作基準模式設定」新增：
-    - `傳統固定頂溫設點 (°C)`：預設 1100.0°C（可調範圍 1000~1200°C）。
-    - `傳統改鋁湯控制時間 (小時)`：預設 4.5 小時（可調範圍 1.0~8.0 小時）。
-  - 圖表 1 清楚繪出傳統模式的前期頂溫設點、4.5h 改湯溫垂直標記線，以及改湯溫後的保溫動態。
+### 1. 雙排 KPI 指標卡片 (Dual-Row KPI Comparison)
+* **第一排【🏛️ 傳統操作模式基準 Baseline Practice】**：
+  * 傳統每爐總生產成本（TWD）
+  * 傳統天然氣總耗量（Nm³）與單耗（Nm³/t）
+  * 傳統氧化燒損渣量（kg）與投料燒損率（%）
+  * 傳統控溫操作（如 1100°C 全火 $\rightarrow$ 4.5h 改鋁湯控制）
+  * 傳統過剩空氣率與煙道殘氧（% O₂）
+* **第二排【🚀 最佳化階梯升溫模式與降減效益 Optimal & Savings vs. Baseline】**：
+  * 最佳化每爐總成本（包含節省金額與降減 %）
+  * 最佳化天然氣耗量（包含節省 Nm³ 與節能 %）
+  * 最佳化氧化燒損渣量（包含減少 kg 與降損 %）
+  * 最佳 Melt-to-Hold 切換點（如 3.5h，設點 1160°C $\rightarrow$ 920°C）
+  * 最佳過剩空氣率與殘氧（如 12.5%，2.41% O₂）
 
-### 2. 雙向熱傳與相變顯熱公式修復 (Thermodynamic Enthalpy & Bidirectional Flux)
-- **移除人工 800°C 截斷**：移除 `src/optimizer.py` 中 `min(800.0, ...)` 硬編碼限制，改用標準冶金液相顯熱公式 $T_{\text{bath}} = T_{\text{liquidus}} + \frac{E_{\text{liquid}}}{m_{\text{total}} \cdot C_{p,\text{liquid}}}$。
-- **支援雙向熱傳**：移除 `src/physics_model.py` 中 `max(0.0, flux)`，當 $T_{\text{roof}} < T_{\text{bath}}$ 時，熱量正常由高溫鋁湯向較冷爐頂輻射散熱放熱 ($Q_{\text{net}} < 0$)，真實反映物理散熱降溫。
-- **串級保溫底限修復**：保溫底限設為目標出湯溫度（如 720°C），當湯溫偏低時動態升溫補熱，湯溫達標時維持熱平衡，徹底消除「冷爐頂保住熱鋁湯」的非物理現象。
-
-### 3. 圖表游標格式化 (Hover Decimal Precision)
-- 於 `finalize_chart_layout` 統一宣告 `fig.update_xaxes(hoverformat='.1f')` 與 `fig.update_yaxes(hoverformat='.1f')`，所有時間、溫度、流量游標數值均顯示至小數點後第一位。
+### 2. 詳細指標對照總表 (Quick Comparison Table)
+* 於結果上方提供一覽無遺的結構化對照表，包含：
+  * 每爐綜合生產成本（天然氣費 + 金屬燒損損失）
+  * 天然氣總量與單耗（Nm³/t-Al）
+  * 氧化燒損量（kg）與燒損率（%）
+  * 控溫時機與設點變化
+  * 煙道殘氧與出湯時限達標狀態
 
 ---
 
