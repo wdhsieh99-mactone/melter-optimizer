@@ -44,6 +44,8 @@ class HeatingCurveOptimizer:
         dt_mins: float = 1.0,
         residual_weight_kg: float = 0.0,
         residual_temp_c: Optional[float] = None,
+        sp_roof_soak: Optional[float] = None,
+        t_soak_end_hrs: Optional[float] = None,
     ) -> Tuple[pd.DataFrame, Dict[str, float]]:
         """Simulates time-step thermodynamic progression with alloy properties & 4-burner 2-pair states.
 
@@ -122,23 +124,24 @@ class HeatingCurveOptimizer:
             t_hr = step * dt_hrs
             times.append(t_hr)
             
-            # Phase and Burner Mode Selection
-            # Melt phase: controlled by roof temperature setpoint (dual pair firing, up to 2 flames)
-            # Hold phase: controlled by bath temperature feedback (single pair duty toggle, 1 flame)
+            # Stepwise Discrete Multi-Step Setpoint Profile
+            # Step 1 (Main Melt): 0 <= t < t_switch_hrs -> sp_roof_melt (Constant SP)
+            # Step 2 (Flat Bath): t_switch_hrs <= t < t_soak_end_hrs -> sp_roof_soak (Constant SP)
+            # Step 3 (Hold & Tap): t >= t_soak_end_hrs -> sp_roof_hold (Constant SP)
             if t_hr < t_switch_hrs:
                 sp_roof = sp_roof_melt
-                phase = 'Melt'
-                burner_mode = 'Dual Pair (up to 2 Flames Alternating)'
+                phase = '第1段: 主熔化段 (Melt)'
+                burner_mode = 'Dual Pair (交替全火)'
+                max_gas_limit = MAX_GAS_FLOW_DUAL_PAIR
+            elif t_soak_end_hrs is not None and sp_roof_soak is not None and t_hr < t_soak_end_hrs:
+                sp_roof = sp_roof_soak
+                phase = '第2段: 平湯昇溫段 (Flat Bath)'
+                burner_mode = 'Dual Pair (交替中火)'
                 max_gas_limit = MAX_GAS_FLOW_DUAL_PAIR
             else:
-                # Bath temperature control mode (Hold mode):
-                # Target bath temp is the baseline holding floor. When bath error > 0, roof setpoint scales
-                # up towards sp_roof_hold to add heat; when bath error <= 0, roof setpoint rests at target_bath_temp_c.
-                roof_sp_hold_floor = target_bath_temp_c
-                bath_err = np.clip(target_bath_temp_c - current_bath_temp, 0.0, 15.0)
-                sp_roof = roof_sp_hold_floor + (bath_err / 15.0) * (sp_roof_hold - roof_sp_hold_floor)
-                phase = 'Hold'
-                burner_mode = 'Single Pair (1 Flame Alternating)'
+                sp_roof = sp_roof_hold
+                phase = '第3段: 出湯保溫段 (Hold & Tap)' if (t_soak_end_hrs is not None and sp_roof_soak is not None) else '第2段: 出湯保溫段 (Hold & Tap)'
+                burner_mode = 'Single Pair (交替微火)'
                 max_gas_limit = MAX_GAS_FLOW_SINGLE_PAIR
 
             sp_roofs.append(sp_roof)
@@ -239,7 +242,10 @@ class HeatingCurveOptimizer:
         residual_weight_kg: float = 0.0,
         residual_temp_c: Optional[float] = None,
     ) -> Tuple[pd.DataFrame, Dict[str, float]]:
-        """Simulates baseline plant practice (fixed roof SP, e.g. 1100°C for ~4.5h, then switches to bath temp control)."""
+        """Simulates baseline plant practice:
+        Step 1: 0 to baseline_switch_hrs (e.g. 4.5h) with fixed roof SP 1100°C (Dual Pair full fire).
+        Step 2: baseline_switch_hrs to end with holding SP ~760°C (Single Pair holding fire).
+        """
         if baseline_switch_hrs is None:
             baseline_switch_hrs = min(4.5, target_duration_hrs * 0.75)
         return self.simulate_trajectory(
@@ -247,7 +253,7 @@ class HeatingCurveOptimizer:
             target_duration_hrs=target_duration_hrs,
             sp_roof_melt=baseline_roof_sp,
             t_switch_hrs=baseline_switch_hrs,
-            sp_roof_hold=1020.0,
+            sp_roof_hold=760.0,
             alloy_name=alloy_name,
             excess_air_pct=baseline_excess_air_pct,
             target_bath_temp_c=target_bath_temp_c,
@@ -270,11 +276,8 @@ class HeatingCurveOptimizer:
         residual_weight_kg: float = 0.0,
         residual_temp_c: Optional[float] = None,
     ) -> Dict:
-        """Finds the (sp_roof_melt, t_switch, sp_roof_hold, excess_air_pct) schedule that
-        minimizes gas + dross cost, SUBJECT TO reaching target_bath_temp_c by
-        discharge_deadline_hrs (a hard constraint -- the operator's required tap-out time, not
-        a free variable). Candidates that miss the deadline are excluded from consideration
-        entirely, never merely penalized, so a returned result is always deadline-feasible.
+        """Finds the optimal discrete multi-step schedule (Step 1 Melt -> Step 2 Flat -> Step 3 Hold)
+        that minimizes gas + dross cost, SUBJECT TO reaching target_bath_temp_c by discharge_deadline_hrs.
         """
         best_cost = float('inf')
         best_params = None
@@ -282,43 +285,46 @@ class HeatingCurveOptimizer:
         best_summary = None
 
         sp_melts = np.linspace(1120.0, max_roof_sp_limit, 5)
-        t_switches = np.linspace(discharge_deadline_hrs * 0.45, discharge_deadline_hrs * 0.85, 6)
-        sp_holds = np.linspace(880.0, 1000.0, 4)
-        excess_airs = [10.0, 12.5, 15.0, baseline_excess_air_pct] # Compare optimal air-fuel ratio against user baseline
+        t_sw1_grid = np.linspace(discharge_deadline_hrs * 0.40, discharge_deadline_hrs * 0.70, 5)
+        sp_soaks = [950.0, 1000.0, 1050.0]
+        sp_holds = [750.0, 780.0]
+        excess_airs = [10.0, 12.5, 15.0, baseline_excess_air_pct]
 
         for sp_m in sp_melts:
-            for t_sw in t_switches:
-                for sp_h in sp_holds:
-                    for ex_air in excess_airs:
-                        df_sim, summary = self.simulate_trajectory(
-                            charged_weight_kg=charged_weight_kg,
-                            target_duration_hrs=discharge_deadline_hrs,
-                            sp_roof_melt=sp_m,
-                            t_switch_hrs=t_sw,
-                            sp_roof_hold=sp_h,
-                            alloy_name=alloy_name,
-                            excess_air_pct=ex_air,
-                            target_bath_temp_c=target_bath_temp_c,
-                            dt_mins=dt_mins,
-                            residual_weight_kg=residual_weight_kg,
-                            residual_temp_c=residual_temp_c,
-                        )
+            for t_sw1 in t_sw1_grid:
+                for sp_soak in sp_soaks:
+                    t_sw2 = min(discharge_deadline_hrs * 0.88, t_sw1 + 1.2)
+                    for sp_h in sp_holds:
+                        for ex_air in excess_airs:
+                            df_sim, summary = self.simulate_trajectory(
+                                charged_weight_kg=charged_weight_kg,
+                                target_duration_hrs=discharge_deadline_hrs,
+                                sp_roof_melt=sp_m,
+                                t_switch_hrs=t_sw1,
+                                sp_roof_soak=sp_soak,
+                                t_soak_end_hrs=t_sw2,
+                                sp_roof_hold=sp_h,
+                                alloy_name=alloy_name,
+                                excess_air_pct=ex_air,
+                                target_bath_temp_c=target_bath_temp_c,
+                                dt_mins=dt_mins,
+                                residual_weight_kg=residual_weight_kg,
+                                residual_temp_c=residual_temp_c,
+                            )
 
-                        # Hard deadline constraint: reject any schedule that isn't at
-                        # target temperature by discharge_deadline_hrs, don't just penalize it.
-                        if summary['final_bath_temp_c'] < (target_bath_temp_c - 5.0):
-                            continue
+                            # Hard deadline constraint
+                            if summary['final_bath_temp_c'] < (target_bath_temp_c - 5.0):
+                                continue
 
-                        cost = summary['total_cost']
-                        if cost < best_cost:
-                            best_cost = cost
-                            best_params = (sp_m, t_sw, sp_h, ex_air)
-                            best_df_sim = df_sim
-                            best_summary = summary
+                            cost = summary['total_cost']
+                            if cost < best_cost:
+                                best_cost = cost
+                                best_params = (sp_m, t_sw1, sp_soak, t_sw2, sp_h, ex_air)
+                                best_df_sim = df_sim
+                                best_summary = summary
 
         if best_params is None:
-            # No candidate in the search grid met the deadline at max_roof_sp_limit -- fall
-            # back to the hottest/leanest schedule
+            # Fallback to hottest/leanest schedule if no schedule met deadline
             best_df_sim, best_summary = self.run_baseline_scenario(
                 charged_weight_kg, discharge_deadline_hrs, alloy_name=alloy_name,
                 baseline_roof_sp=baseline_roof_sp, baseline_switch_hrs=baseline_switch_hrs,
@@ -326,7 +332,7 @@ class HeatingCurveOptimizer:
                 residual_weight_kg=residual_weight_kg, residual_temp_c=residual_temp_c,
                 target_bath_temp_c=target_bath_temp_c,
             )
-            best_params = (max_roof_sp_limit, discharge_deadline_hrs * 0.85, 1000.0, baseline_excess_air_pct)
+            best_params = (max_roof_sp_limit, discharge_deadline_hrs * 0.70, 1000.0, discharge_deadline_hrs * 0.85, 760.0, baseline_excess_air_pct)
 
         df_base, summary_base = self.run_baseline_scenario(
             charged_weight_kg, discharge_deadline_hrs, alloy_name=alloy_name,
@@ -346,9 +352,11 @@ class HeatingCurveOptimizer:
             'optimal_params': {
                 'sp_roof_melt': float(best_params[0]),
                 't_switch_hrs': round(float(best_params[1]), 2),
-                'sp_roof_hold': float(best_params[2]),
-                'excess_air_pct': float(best_params[3]),
-                'flue_o2_pct': round(self.model.calculate_flue_oxygen_pct(best_params[3]), 2),
+                'sp_roof_soak': float(best_params[2]),
+                't_soak_end_hrs': round(float(best_params[3]), 2),
+                'sp_roof_hold': float(best_params[4]),
+                'excess_air_pct': float(best_params[5]),
+                'flue_o2_pct': round(self.model.calculate_flue_oxygen_pct(best_params[5]), 2),
             },
             'discharge_deadline_hrs': discharge_deadline_hrs,
             'deadline_met': bool(deadline_met),

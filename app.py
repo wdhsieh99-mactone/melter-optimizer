@@ -344,9 +344,9 @@ def main():
             )
         with o_col4:
             st.metric(
-                label="最佳 Melt-to-Hold 切換點",
-                value=f"{opt_params['t_switch_hrs']:.1f} 小時",
-                delta=f"{opt_params['sp_roof_melt']:.0f}°C → {opt_params['sp_roof_hold']:.0f}°C",
+                label="最佳 3 段階梯控溫",
+                value=f"3 段階梯控制",
+                delta=f"{opt_params['sp_roof_melt']:.0f}°C → {opt_params['sp_roof_soak']:.0f}°C → {opt_params['sp_roof_hold']:.0f}°C",
                 delta_color="off"
             )
         with o_col5:
@@ -368,8 +368,8 @@ def main():
                     "天然氣單耗 (Specific Gas Consumption)",
                     "鋁錠氧化燒損量 (Dross Generated)",
                     "投料燒損率 (Dross Loss %)",
-                    "Melt-to-Hold 切換時間 (Switchover Time)",
-                    "熔化期/保溫期 頂溫設點 (Roof Temp Setpoints)",
+                    "各階梯切換時機 (Step Transition Timing)",
+                    "熔化/平湯/保溫 頂溫設點 (Stepwise Roof SP)",
                     "過剩空氣率 / 煙道殘氧 (Excess Air / Flue O₂)",
                     "出湯達成時限 (Target Deadline Met)"
                 ],
@@ -381,8 +381,8 @@ def main():
                     f"{base_gas_per_t:.1f} Nm³/t",
                     f"{base_sum['cum_dross_kg']:.1f} kg",
                     f"{base_dross_pct:.2f}%",
-                    f"{baseline_switch_hrs:.1f} 小時",
-                    f"{baseline_roof_sp:.0f}°C → 鋁湯保溫",
+                    f"0~{baseline_switch_hrs:.1f}h 全火 → 轉湯溫",
+                    f"{baseline_roof_sp:.0f}°C → 760°C 保溫",
                     f"{excess_air_pct:.1f}% ({est_o2:.2f}% O₂)",
                     f"達標 ({base_sum['final_bath_temp_c']:.1f}°C)"
                 ],
@@ -394,8 +394,8 @@ def main():
                     f"{opt_gas_per_t:.1f} Nm³/t",
                     f"{opt_sum['cum_dross_kg']:.1f} kg",
                     f"{opt_dross_pct:.2f}%",
-                    f"{opt_params['t_switch_hrs']:.1f} 小時",
-                    f"{opt_params['sp_roof_melt']:.0f}°C → {opt_params['sp_roof_hold']:.0f}°C",
+                    f"第1段: 0~{opt_params['t_switch_hrs']:.1f}h | 第2段: {opt_params['t_switch_hrs']:.1f}~{opt_params['t_soak_end_hrs']:.1f}h | 第3段: {opt_params['t_soak_end_hrs']:.1f}~{target_duration_hrs:.1f}h",
+                    f"{opt_params['sp_roof_melt']:.0f}°C → {opt_params['sp_roof_soak']:.0f}°C → {opt_params['sp_roof_hold']:.0f}°C",
                     f"{opt_params['excess_air_pct']:.1f}% ({opt_params['flue_o2_pct']:.2f}% O₂)",
                     f"{'✅ 準時出湯' if res['deadline_met'] else '⚠️ 未達時限'} ({opt_sum['final_bath_temp_c']:.1f}°C)"
                 ],
@@ -407,8 +407,8 @@ def main():
                     f"下降 -{base_gas_per_t - opt_gas_per_t:.1f} Nm³/t (-{gas_pct:.1f}%)",
                     f"減少 -{savings['dross_savings_kg']:.1f} kg (-{dross_pct:.1f}%)",
                     f"降低 -{base_dross_pct - opt_dross_pct:.2f} 個百分點",
-                    f"提前 {baseline_switch_hrs - opt_params['t_switch_hrs']:.1f} 小時轉保溫" if baseline_switch_hrs > opt_params['t_switch_hrs'] else "調整切換點",
-                    "階梯式動態控溫降低過熱",
+                    f"平湯及時降溫 {opt_params['sp_roof_melt'] - opt_params['sp_roof_soak']:.0f}°C 抑止氧化",
+                    "3 段階梯設定值，符合現場 PLC/DCS 執行需求",
                     f"過剩空氣減少 {excess_air_pct - opt_params['excess_air_pct']:.1f}%",
                     "符合出湯工藝時限要求"
                 ]
@@ -425,7 +425,7 @@ def main():
         # Baseline curves
         fig1.add_trace(go.Scatter(
             x=df_base['time_hrs'], y=df_base['sp_roof_c'],
-            name=f'傳統頂溫設點 ({baseline_roof_sp:.0f}°C → {baseline_switch_hrs:.1f}h改湯溫)',
+            name=f'傳統 2 段階梯設點 ({baseline_roof_sp:.0f}°C → {baseline_switch_hrs:.1f}h 轉 760°C)',
             line=dict(color='#E53935', dash='dash')
         ))
         fig1.add_trace(go.Scatter(
@@ -437,7 +437,7 @@ def main():
         # Optimal curves
         fig1.add_trace(go.Scatter(
             x=df_opt['time_hrs'], y=df_opt['sp_roof_c'],
-            name='最佳化頂溫設點 SP_roof(t)',
+            name=f'最佳化 3 段階梯設點 ({opt_params["sp_roof_melt"]:.0f}°C → {opt_params["sp_roof_soak"]:.0f}°C → {opt_params["sp_roof_hold"]:.0f}°C)',
             line=dict(color='#1E88E5', width=3)
         ))
         fig1.add_trace(go.Scatter(
@@ -494,6 +494,36 @@ def main():
         )
         finalize_chart_layout(fig1, height=560)
         st.plotly_chart(fig1, use_container_width=True)
+
+        # Multi-Step Discrete Recipe Card for Field / DCS implementation
+        st.markdown("##### 📝 DCS / PLC 現場 3 段階梯設定配方 (Stepwise Temperature Control Recipe)")
+        rc1, rc2, rc3 = st.columns(3)
+        with rc1:
+            st.info(
+                f"**第 1 段：主熔化段 (Main Melt)**\n\n"
+                f"- **時段**：`0.0 h ~ {opt_params['t_switch_hrs']:.1f} h`\n"
+                f"- **頂溫設點**：`{opt_params['sp_roof_melt']:.0f} °C` (水平固定)\n"
+                f"- **燃燒模式**：雙對燒嘴交替全火 (Dual Pair)\n"
+                f"- **工藝目的**：高功率迅速穿透固態料堆並完成相變熔解"
+            )
+        with rc2:
+            st.info(
+                f"**第 2 段：平湯昇溫段 (Flat Bath)**\n\n"
+                f"- **時段**：`{opt_params['t_switch_hrs']:.1f} h ~ {opt_params['t_soak_end_hrs']:.1f} h`\n"
+                f"- **頂溫設點**：`{opt_params['sp_roof_soak']:.0f} °C` (水平固定)\n"
+                f"- **燃燒模式**：雙對燒嘴交替中火\n"
+                f"- **工藝目的**：全融平湯後及時降階，抑制鋁液高溫氧化燒損"
+            )
+        with rc3:
+            st.info(
+                f"**第 3 段：出湯保溫段 (Hold & Tap)**\n\n"
+                f"- **時段**：`{opt_params['t_soak_end_hrs']:.1f} h ~ {target_duration_hrs:.1f} h`\n"
+                f"- **頂溫設點**：`{opt_params['sp_roof_hold']:.0f} °C` (水平固定)\n"
+                f"- **燃燒模式**：單對燒嘴微火/保溫火 (Single Pair)\n"
+                f"- **工藝目的**：維持出湯目標湯溫 {target_bath_temp:.0f}°C，熱平衡待出湯"
+            )
+
+        st.markdown("---")
 
         # Chart 2 & 3: Gas Flow and Cost Breakdown -- full width, stacked vertically.
         st.subheader("2. 兩對燒嘴燃氣流量與累積耗氣量 (Gas Flow & 2-Pair Status)")

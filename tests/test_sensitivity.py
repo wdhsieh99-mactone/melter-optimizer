@@ -63,7 +63,7 @@ def test_low_burnoff_ea_dross_is_capped_at_physical_ceiling():
     assert degraded['cum_dross_kg'] / BASE['charged_weight_kg'] <= 0.20
     # The calibrated default must be completely unaffected by the ceiling's existence.
     calibrated = _sim()
-    assert calibrated['cum_dross_kg'] == pytest.approx(1516.0, rel=0.02)
+    assert calibrated['cum_dross_kg'] == pytest.approx(1586.5, rel=0.02)
 
 
 def test_hearth_area_instance_override_has_full_effect():
