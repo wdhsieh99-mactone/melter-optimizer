@@ -96,10 +96,29 @@ def get_optimizer_and_evaluator():
     return model, opt, evaluator
 
 
+import hashlib
+
+# Authorized passcodes (can also be overridden by environment variable MELTER_AUTH_PASSWORD)
+DEFAULT_AUTH_PASSWORDS = {'rd2026', 'melter80t', 'admin888', 'mfx2026'}
+
+
+def check_password(password: str) -> bool:
+    """Validates user password against environment variable or default passcodes."""
+    if not password:
+        return False
+    env_pwd = os.environ.get('MELTER_AUTH_PASSWORD')
+    if env_pwd and password.strip() == env_pwd.strip():
+        return True
+    return password.strip() in DEFAULT_AUTH_PASSWORDS
+
+
 def main():
     st.title("🔥 80T 反射式熔鋁爐升溫曲線與空燃比最佳化系統")
     st.caption("80T Static Aluminum Melter — Alloy Aware, Air-Fuel Ratio & 4-Burner 2-Pair Regenerative Combustion Optimizer")
     
+    if 'is_authenticated' not in st.session_state:
+        st.session_state['is_authenticated'] = False
+
     model, optimizer, evaluator = get_optimizer_and_evaluator()
 
     calib_meta = load_calibration_meta()
@@ -121,6 +140,25 @@ def main():
     # Sidebar Input Parameters
     st.sidebar.header("⚙️ 爐次、合金與空燃比設定")
 
+    # Access Control Sidebar Section
+    st.sidebar.subheader("🔒 系統權限與登入")
+    if st.session_state['is_authenticated']:
+        st.sidebar.success("✅ 已授權模式 (Authorized)")
+        if st.sidebar.button("🚪 登出權限 (Logout)", key="sidebar_logout_btn"):
+            st.session_state['is_authenticated'] = False
+            st.rerun()
+    else:
+        st.sidebar.caption("訪客模式：開放即時單爐模擬與手冊；歷史生產日報回測受權限保護。")
+        with st.sidebar.expander("🔑 點此輸入授權密碼"):
+            pwd_input = st.text_input("授權密碼", type="password", key="sidebar_pwd_input")
+            if st.button("🔓 登入解鎖", key="sidebar_login_btn"):
+                if check_password(pwd_input):
+                    st.session_state['is_authenticated'] = True
+                    st.rerun()
+                else:
+                    st.error("❌ 密碼錯誤")
+
+    st.sidebar.markdown("---")
     st.sidebar.subheader("1. 鋁種與加料條件")
     alloy_list = ['5052', '5052KS', '5083A', '5083L', '6061', '5182', '3004', '99.7']
     selected_alloy = st.sidebar.selectbox("產出鋁種 (Alloy Type)", alloy_list, index=0)
@@ -176,7 +214,8 @@ def main():
     model.aluminum_price = aluminum_price
     
     # Main Tabs
-    tab_single, tab_backtest, tab_manual = st.tabs(["🚀 即時單爐最佳化模擬", "📊 歷史爐次回測分析", "📖 4燒嘴蓄熱系統手冊"])
+    tab_title_bt = "📊 歷史爐次回測分析 (✅ 已解鎖)" if st.session_state.get('is_authenticated', False) else "📊 歷史爐次回測分析 (🔒 需授權)"
+    tab_single, tab_backtest, tab_manual = st.tabs(["🚀 即時單爐最佳化模擬", tab_title_bt, "📖 4燒嘴蓄熱系統手冊"])
     
     with tab_single:
         st.markdown(
@@ -332,53 +371,81 @@ def main():
         st.plotly_chart(fig3, use_container_width=True)
 
     with tab_backtest:
-        st.subheader("📈 歷史爐次回測：最佳化 vs. 真實生產數據 (Optimizer vs. Real Historical Performance)")
-        st.caption(
-            "兩組回測皆以「真實」數據為對照組（感測器直接量測的燃氣流量、或產紀錄表的實際燃耗與實際金屬損耗），"
-            "而非未校正的模擬基準情境 — 避免『最佳化用氣量其實比實際更多』卻仍顯示為省錢的矛盾。"
-        )
+        if not st.session_state.get('is_authenticated', False):
+            st.markdown("### 🔒 歷史數據回測權限保護 (Access Restricted)")
+            st.warning(
+                "⚠️ **此分頁涉及全廠實際生產日報 (114/115年 MFX) 與 5秒感測器歷史大數據，受企業內部權限保護。**\n\n"
+                "未授權訪客可自由使用「**🚀 即時單爐最佳化模擬**」與「**📖 4燒嘴蓄熱系統手冊**」進行工程計算與空燃比分析。"
+            )
+            st.markdown("---")
+            col_l, col_r = st.columns([1, 1])
+            with col_l:
+                st.write("##### 🔑 請輸入授權密碼以解鎖")
+                with st.form("in_tab_login_form"):
+                    tab_pwd = st.text_input("研發/管理員授權密碼 (Passcode)", type="password", placeholder="請輸入授權密碼")
+                    submitted = st.form_submit_button("🔓 驗證並解鎖歷史回測資料庫")
+                    if submitted:
+                        if check_password(tab_pwd):
+                            st.session_state['is_authenticated'] = True
+                            st.success("✅ 驗證成功！正在載入歷史回測資料庫...")
+                            st.rerun()
+                        else:
+                            st.error("❌ 密碼錯誤，請確認後重試。")
+            with col_r:
+                st.info(
+                    "💡 **權限存取說明**：\n"
+                    "- **公開功能**：8種合金熱物理相變計算、4燒嘴2對蓄熱燃燒模擬、空燃比與階梯頂溫最佳化。\n"
+                    "- **受保護功能**：全廠 123 爐真實燃耗/金屬燒損回測、MFA 感測器流量計直接積分比對。\n\n"
+                    "*(如需授權，請洽專案負責研究員)*"
+                )
+        else:
+            st.subheader("📈 歷史爐次回測：最佳化 vs. 真實生產數據 (Optimizer vs. Real Historical Performance)")
+            st.caption(
+                "兩組回測皆以「真實」數據為對照組（感測器直接量測的燃氣流量、或產紀錄表的實際燃耗與實際金屬損耗），"
+                "而非未校正的模擬基準情境 — 避免『最佳化用氣量其實比實際更多』卻仍顯示為省錢的矛盾。"
+            )
 
-        backtest_choice = st.radio(
-            "選擇回測資料集 (Backtest dataset)",
-            ["MFA 感測器週資料 (~20 爐, 燃氣流量直測)", "全廠生產紀錄抽樣 (含實際金屬燒損)"],
-            horizontal=True,
-        )
+            backtest_choice = st.radio(
+                "選擇回測資料集 (Backtest dataset)",
+                ["MFA 感測器週資料 (~20 爐, 燃氣流量直測)", "全廠生產紀錄抽樣 (含實際金屬燒損)"],
+                horizontal=True,
+            )
 
-        if st.button("▶ 執行回測 (Run backtest)"):
-            with st.spinner("正在讀取歷史資料並計算最佳化結果..."):
-                if backtest_choice.startswith("MFA"):
-                    df_bt, summary_bt = evaluator.run_backtest_on_sensor_week()
+            if st.button("▶ 執行回測 (Run backtest)"):
+                with st.spinner("正在讀取歷史資料並計算最佳化結果..."):
+                    if backtest_choice.startswith("MFA"):
+                        df_bt, summary_bt = evaluator.run_backtest_on_sensor_week()
+                    else:
+                        df_bt, summary_bt = evaluator.run_backtest_on_production_log()
+
+                if summary_bt.get('total_heats_analyzed', 0) == 0:
+                    st.warning("此資料集中沒有可用的爐次資料。")
                 else:
-                    df_bt, summary_bt = evaluator.run_backtest_on_production_log()
+                    c1, c2, c3, c4 = st.columns(4)
+                    c1.metric("回測分析總爐數", f"{summary_bt['total_heats_analyzed']} 爐")
+                    c2.metric("真實總燃耗 (Real, Nm³)", f"{summary_bt['total_real_gas_nm3']:,.0f} Nm³")
+                    c3.metric("最佳化總燃耗 (Optimal, Nm³)", f"{summary_bt['total_opt_gas_nm3']:,.0f} Nm³",
+                              delta=f"-{summary_bt['gas_delta_pct']:.1f}%", delta_color="normal")
+                    c4.metric("回測總成本節省 (vs. 真實)", f"${summary_bt['total_cost_savings_twd']:,.0f} TWD")
+                    st.caption(f"達成出湯時限的爐次比例: {summary_bt['pct_heats_deadline_met']:.1f}%")
 
-            if summary_bt.get('total_heats_analyzed', 0) == 0:
-                st.warning("此資料集中沒有可用的爐次資料。")
-            else:
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("回測分析總爐數", f"{summary_bt['total_heats_analyzed']} 爐")
-                c2.metric("真實總燃耗 (Real, Nm³)", f"{summary_bt['total_real_gas_nm3']:,.0f} Nm³")
-                c3.metric("最佳化總燃耗 (Optimal, Nm³)", f"{summary_bt['total_opt_gas_nm3']:,.0f} Nm³",
-                          delta=f"-{summary_bt['gas_delta_pct']:.1f}%", delta_color="normal")
-                c4.metric("回測總成本節省 (vs. 真實)", f"${summary_bt['total_cost_savings_twd']:,.0f} TWD")
-                st.caption(f"達成出湯時限的爐次比例: {summary_bt['pct_heats_deadline_met']:.1f}%")
-
-                st.markdown("---")
-                st.write("##### 各歷史爐次明細 (Heat Breakdown Table)")
-                fmt = {
-                    'charged_weight_kg': '{:,.0f}',
-                    'duration_hrs': '{:.1f}',
-                    'real_gas_nm3': '{:,.1f}',
-                    'opt_gas_nm3': '{:,.1f}',
-                    'real_dross_kg': '{:,.1f}',
-                    'opt_dross_kg': '{:.2f}',
-                    'opt_excess_air_pct': '{:.1f}%',
-                    'opt_flue_o2_pct': '{:.2f}%',
-                    'real_cost_twd': '${:,.0f}',
-                    'opt_cost_twd': '${:,.0f}',
-                    'cost_savings_twd': '${:,.0f}',
-                }
-                fmt = {k: v for k, v in fmt.items() if k in df_bt.columns}
-                st.dataframe(df_bt.style.format(fmt), use_container_width=True)
+                    st.markdown("---")
+                    st.write("##### 各歷史爐次明細 (Heat Breakdown Table)")
+                    fmt = {
+                        'charged_weight_kg': '{:,.0f}',
+                        'duration_hrs': '{:.1f}',
+                        'real_gas_nm3': '{:,.1f}',
+                        'opt_gas_nm3': '{:,.1f}',
+                        'real_dross_kg': '{:,.1f}',
+                        'opt_dross_kg': '{:.2f}',
+                        'opt_excess_air_pct': '{:.1f}%',
+                        'opt_flue_o2_pct': '{:.2f}%',
+                        'real_cost_twd': '${:,.0f}',
+                        'opt_cost_twd': '${:,.0f}',
+                        'cost_savings_twd': '${:,.0f}',
+                    }
+                    fmt = {k: v for k, v in fmt.items() if k in df_bt.columns}
+                    st.dataframe(df_bt.style.format(fmt), use_container_width=True)
 
     with tab_manual:
         st.subheader("📘 Mechatherm 80T 4 燒嘴 2 對蓄熱式燃燒系統")
