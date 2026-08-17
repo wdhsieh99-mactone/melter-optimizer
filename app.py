@@ -196,7 +196,11 @@ def main():
         help="必須在此時限內達到目標湯溫並可出湯 — 這是硬性限制，最佳化只在能達成此時限的方案中挑選成本最低者。"
              " (Hard constraint: only schedules that reach target temp by this deadline are considered.)"
     )
-    target_bath_temp = st.sidebar.slider("目標出液湯溫 (°C)", min_value=680.0, max_value=760.0, value=720.0, step=5.0)
+    target_bath_temp = st.sidebar.slider(
+        "目標出液湯溫 (°C) Target Bath Temp",
+        min_value=700.0, max_value=800.0, value=780.0, step=10.0,
+        help="現場出湯目標溫度預設 780°C (可調範圍 700°C ~ 800°C，每格 10°C)。"
+    )
     max_roof_sp_limit = st.sidebar.slider("頂頭最高安全溫度天花板 (°C)", min_value=1100.0, max_value=1250.0, value=1200.0, step=10.0)
     
     st.sidebar.subheader("2. 現場傳統操作基準設定 (3段溫控)")
@@ -204,9 +208,9 @@ def main():
         st.markdown("**第 1 段：融化模式 (Melt Mode)**")
         col_t1_sp, col_t1_dur = st.columns([1, 1])
         with col_t1_sp:
-            base_sp1 = st.number_input("第1段目標頂溫 (°C)", min_value=900.0, max_value=1250.0, value=1180.0, step=10.0, key="base_sp1", help="加料完成關門後融化大火目標頂溫 (現場確認為 1180°C)")
+            base_sp1 = st.number_input("第1段目標頂溫 (°C)", min_value=900.0, max_value=1250.0, value=1180.0, step=10.0, key="base_sp1", help="加料完成關門後融化大火目標頂溫 (現場基準為 1180°C)")
         with col_t1_dur:
-            base_dur1_str = st.text_input("第1段持續時間 (hh:mm)", value="04:00", key="base_dur1", help="融化模式大火持續時間 (現場確認為 04:00 出警示)")
+            base_dur1_str = st.text_input("第1段持續時間 (hh:mm)", value=format_hours_to_hhmm(target_duration_hrs), key="base_dur1", help="現場傳統基準操作：加料關門後 1180°C 大火持續到底 (預設全爐時限)")
 
         st.markdown("**第 2 段：平湯/過渡段 (Flat Bath Mode)**")
         col_t2_sp, col_t2_dur = st.columns([1, 1])
@@ -218,9 +222,9 @@ def main():
         st.markdown("**第 3 段：湯溫/保溫模式 (Bath Mode)**")
         col_t3_sp, col_t3_dur = st.columns([1, 1])
         with col_t3_sp:
-            base_sp3 = st.number_input("第3段保溫設點 (°C)", min_value=700.0, max_value=900.0, value=760.0, step=10.0, key="base_sp3", help="改用湯溫控制模式後之保溫設點")
+            base_sp3 = st.number_input("第3段保溫設點 (°C)", min_value=700.0, max_value=900.0, value=780.0, step=10.0, key="base_sp3", help="改用湯溫控制模式後之保溫設點 (預設 780°C)")
         with col_t3_dur:
-            dur1_hrs = parse_hhmm_to_hours(base_dur1_str, default=4.0)
+            dur1_hrs = parse_hhmm_to_hours(base_dur1_str, default=target_duration_hrs)
             dur2_hrs = parse_hhmm_to_hours(base_dur2_str, default=0.0)
             rem_hrs = max(0.0, target_duration_hrs - dur1_hrs - dur2_hrs)
             st.caption(f"第3段持續時間：自動為剩餘 **{format_hours_to_hhmm(rem_hrs)}**")
@@ -326,12 +330,20 @@ def main():
             )
             st.caption(f"🔥 燒損率: **{base_dross_pct:.2f}%**")
         with b_col4:
-            st.metric(
-                label="現場傳統溫控模式",
-                value=f"{base_sp1:.0f}°C ({base_dur1_str})",
-                help=f"現場加料完成關門後以融化模式 {base_sp1:.0f}°C 持續大火升溫，{base_dur1_str} 警示提示改用湯溫模式。"
-            )
-            st.caption(f"⏱️ {base_dur1_str} 警示轉湯溫 {base_sp3:.0f}°C")
+            if dur1_hrs >= target_duration_hrs:
+                st.metric(
+                    label="現場傳統溫控模式",
+                    value=f"{base_sp1:.0f}°C 持續到底",
+                    help="現場傳統操作基準：加料完成關門後以融化模式 1180°C 大火持續升溫到底。"
+                )
+                st.caption("🔥 傳統固定 1180°C 全火到底")
+            else:
+                st.metric(
+                    label="現場傳統溫控模式",
+                    value=f"{base_sp1:.0f}°C ({base_dur1_str})",
+                    help=f"現場加料完成關門後以融化模式 {base_sp1:.0f}°C 持續大火升溫，{base_dur1_str} 警示提示改用湯溫模式。"
+                )
+                st.caption(f"⏱️ {base_dur1_str} 警示轉湯溫 {base_sp3:.0f}°C")
         with b_col5:
             st.metric(
                 label="傳統過剩空氣率",
@@ -386,6 +398,9 @@ def main():
             st.caption(f"💨 煙道殘氧: **{opt_params['flue_o2_pct']:.2f}% O₂**")
 
         # Structured comparison table
+        base_timing_str = f"00:00~{format_hours_to_hhmm(target_duration_hrs)} (1180°C 全火到底)" if dur1_hrs >= target_duration_hrs else f"00:00~{format_hours_to_hhmm(dur1_hrs)} (融化) → 轉湯溫保溫"
+        base_sp_str = f"{base_sp1:.0f}°C 全火持續到底" if dur1_hrs >= target_duration_hrs else f"{base_sp1:.0f}°C (融化) → {base_sp3:.0f}°C (保溫)"
+
         with st.expander("📋 點此展開「傳統 vs. 最佳化」各項指標詳細對照表", expanded=True):
             df_compare = pd.DataFrame({
                 "指標項目 (Metric)": [
@@ -409,8 +424,8 @@ def main():
                     f"{base_gas_per_t:.1f} Nm³/t",
                     f"{base_sum['cum_dross_kg']:.1f} kg",
                     f"{base_dross_pct:.2f}%",
-                    f"00:00~{format_hours_to_hhmm(dur1_hrs)} (融化) → 轉湯溫保溫",
-                    f"{base_sp1:.0f}°C (融化) → {base_sp3:.0f}°C (保溫)",
+                    base_timing_str,
+                    base_sp_str,
                     f"{excess_air_pct:.1f}% ({est_o2:.2f}% O₂)",
                     f"達標 ({base_sum['final_bath_temp_c']:.1f}°C)"
                 ],
@@ -451,9 +466,10 @@ def main():
         fig1 = go.Figure()
         
         # Baseline curves
+        baseline_trace_name = f'現場傳統模式設點 (Melt {base_sp1:.0f}°C 全火持續到底)' if dur1_hrs >= target_duration_hrs else f'現場傳統模式設點 (Melt {base_sp1:.0f}°C / {base_dur1_str} → Bath {base_sp3:.0f}°C)'
         fig1.add_trace(go.Scatter(
             x=df_base['time_hrs'], y=df_base['sp_roof_c'],
-            name=f'現場傳統模式設點 (Melt {base_sp1:.0f}°C / {base_dur1_str} → Bath {base_sp3:.0f}°C)',
+            name=baseline_trace_name,
             line=dict(color='#E53935', dash='dash')
         ))
         fig1.add_trace(go.Scatter(
@@ -483,11 +499,12 @@ def main():
         fig1.add_hline(y=props['liquidus'], line_dash="dash", line_color="gray", annotation_text=f"{selected_alloy} 液相線 {props['liquidus']}°C")
         fig1.add_hline(y=target_bath_temp, line_dash="dot", line_color="green", annotation_text=f"目標出湯溫度 {target_bath_temp}°C")
 
-        # Vertical line at the traditional bath control switchover point
-        fig1.add_vline(
-            x=dur1_hrs, line_dash="dot", line_color="#E53935", line_width=1.5,
-            annotation_text=f"傳統改湯溫 ({base_dur1_str})", annotation_position="bottom right"
-        )
+        # Vertical line at the traditional bath control switchover point (if not continuous to end)
+        if dur1_hrs < target_duration_hrs:
+            fig1.add_vline(
+                x=dur1_hrs, line_dash="dot", line_color="#E53935", line_width=1.5,
+                annotation_text=f"傳統改湯溫 ({base_dur1_str})", annotation_position="bottom right"
+            )
 
         # Vertical line at the required discharge (tap-out) deadline.
         fig1.add_vline(

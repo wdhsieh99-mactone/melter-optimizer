@@ -60,12 +60,12 @@ class HeatingCurveOptimizer:
         target_duration_hrs: float,
         sp_roof_melt: float,
         t_switch_hrs: float,
-        sp_roof_hold: float,
+        sp_roof_hold: float = 780.0,
         alloy_name: str = '5052',
         excess_air_pct: float = 15.0,
         initial_bath_temp_c: float = 25.0,
         initial_roof_temp_c: float = 850.0,
-        target_bath_temp_c: float = 720.0,
+        target_bath_temp_c: float = 780.0,
         dt_mins: float = 1.0,
         residual_weight_kg: float = 0.0,
         residual_temp_c: Optional[float] = None,
@@ -246,25 +246,25 @@ class HeatingCurveOptimizer:
         baseline_roof_sp: float = 1180.0,
         baseline_switch_hrs: Optional[float] = None,
         baseline_excess_air_pct: float = 25.0,
-        target_bath_temp_c: float = 720.0,
+        target_bath_temp_c: float = 780.0,
         dt_mins: float = 1.0,
         residual_weight_kg: float = 0.0,
         residual_temp_c: Optional[float] = None,
         baseline_dur_melt_hrs: Optional[float] = None,
         baseline_sp_soak: Optional[float] = None,
         baseline_dur_soak_hrs: Optional[float] = 0.0,
-        baseline_sp_hold: float = 760.0,
+        baseline_sp_hold: float = 780.0,
     ) -> Tuple[pd.DataFrame, Dict[str, float]]:
         """Simulates baseline plant practice:
-        Step 1: 0 to baseline_dur_melt_hrs (e.g. 4.0h) with fixed roof SP 1180°C (Dual Pair full fire Melt mode).
+        Step 1: 0 to baseline_dur_melt_hrs (Default: target_duration_hrs, 1180°C continuous to end).
         Step 2: (optional) Flat bath soak mode.
-        Step 3: Bath mode holding SP ~760°C (Single Pair holding fire).
+        Step 3: Bath mode holding SP ~780°C (Single Pair holding fire).
         """
-        dur_melt = baseline_dur_melt_hrs if baseline_dur_melt_hrs is not None else (baseline_switch_hrs if baseline_switch_hrs is not None else min(4.0, target_duration_hrs * 0.75))
+        dur_melt = baseline_dur_melt_hrs if baseline_dur_melt_hrs is not None else (baseline_switch_hrs if baseline_switch_hrs is not None else target_duration_hrs)
         dur_soak = baseline_dur_soak_hrs if baseline_dur_soak_hrs is not None else 0.0
 
         if dur_soak > 0.05 and baseline_sp_soak is not None:
-            t_sw1 = dur_melt
+            t_sw1 = min(target_duration_hrs, dur_melt)
             t_sw2 = min(target_duration_hrs, dur_melt + dur_soak)
             return self.simulate_trajectory(
                 charged_weight_kg=charged_weight_kg,
@@ -286,7 +286,7 @@ class HeatingCurveOptimizer:
                 charged_weight_kg=charged_weight_kg,
                 target_duration_hrs=target_duration_hrs,
                 sp_roof_melt=baseline_roof_sp,
-                t_switch_hrs=dur_melt,
+                t_switch_hrs=min(target_duration_hrs, dur_melt),
                 sp_roof_hold=baseline_sp_hold,
                 alloy_name=alloy_name,
                 excess_air_pct=baseline_excess_air_pct,
@@ -304,7 +304,7 @@ class HeatingCurveOptimizer:
         baseline_roof_sp: float = 1180.0,
         baseline_switch_hrs: Optional[float] = None,
         baseline_excess_air_pct: float = 20.0,
-        target_bath_temp_c: float = 720.0,
+        target_bath_temp_c: float = 780.0,
         max_roof_sp_limit: float = 1200.0,
         dt_mins: float = 1.0,
         residual_weight_kg: float = 0.0,
@@ -312,7 +312,7 @@ class HeatingCurveOptimizer:
         baseline_dur_melt_hrs: Optional[float] = None,
         baseline_sp_soak: Optional[float] = None,
         baseline_dur_soak_hrs: Optional[float] = 0.0,
-        baseline_sp_hold: float = 760.0,
+        baseline_sp_hold: float = 780.0,
     ) -> Dict:
         """Finds the optimal discrete multi-step schedule (Step 1 Melt -> Step 2 Flat -> Step 3 Hold)
         that minimizes gas + dross cost, SUBJECT TO reaching target_bath_temp_c by discharge_deadline_hrs.
