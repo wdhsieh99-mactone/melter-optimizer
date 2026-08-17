@@ -266,43 +266,154 @@ def main():
                 " closest fallback; raise the ceiling or relax the deadline.)"
             )
 
-        # KPI Metric Cards
-        col1, col2, col3, col4, col5 = st.columns(5)
-        with col1:
+        # Section 1: Comprehensive KPI Comparison
+        total_metal_tonnes = (charged_weight_kg + residual_weight_kg) / 1000.0
+        base_gas_per_t = base_sum['cum_gas_nm3'] / total_metal_tonnes if total_metal_tonnes > 0 else 0.0
+        opt_gas_per_t = opt_sum['cum_gas_nm3'] / total_metal_tonnes if total_metal_tonnes > 0 else 0.0
+        
+        base_dross_pct = (base_sum['cum_dross_kg'] / charged_weight_kg) * 100.0 if charged_weight_kg > 0 else 0.0
+        opt_dross_pct = (opt_sum['cum_dross_kg'] / charged_weight_kg) * 100.0 if charged_weight_kg > 0 else 0.0
+
+        gas_pct = ((base_sum['cum_gas_nm3'] - opt_sum['cum_gas_nm3']) / base_sum['cum_gas_nm3']) * 100.0 if base_sum['cum_gas_nm3'] > 0 else 0.0
+        dross_pct = ((base_sum['cum_dross_kg'] - opt_sum['cum_dross_kg']) / base_sum['cum_dross_kg']) * 100.0 if base_sum['cum_dross_kg'] > 0 else 0.0
+
+        st.markdown("#### 📌 熔煉能耗、成本與燒損綜合對照 (Baseline vs. Optimal Summary)")
+
+        # Row 1: 傳統操作基準模式 (Baseline Practice)
+        st.markdown("##### 🏛️ 傳統操作模式基準 (Baseline Practice)")
+        b_col1, b_col2, b_col3, b_col4, b_col5 = st.columns(5)
+        with b_col1:
             st.metric(
-                label="預計總成本節省",
-                value=f"${savings['cost_savings_twd']:,.0f} TWD",
-                delta=f"-{savings['cost_savings_pct']:.1f}%",
-                delta_color="normal"
+                label="傳統每爐總生產成本",
+                value=f"${base_sum['total_cost']:,.0f} TWD",
+                help=f"天然氣費 ${base_sum['gas_cost']:,.0f} + 氧化燒損金屬損失 ${base_sum['dross_cost']:,.0f}"
             )
-        with col2:
+        with b_col2:
             st.metric(
-                label="天然氣節約量",
-                value=f"{savings['gas_savings_nm3']:,.1f} Nm³",
-                delta=f"-{((base_sum['cum_gas_nm3'] - opt_sum['cum_gas_nm3'])/base_sum['cum_gas_nm3']*100):.1f}%",
-                delta_color="normal"
-            )
-        with col3:
-            st.metric(
-                label="減少燒損渣量",
-                value=f"{savings['dross_savings_kg']:.2f} kg",
-                delta=f"-{((base_sum['cum_dross_kg'] - opt_sum['cum_dross_kg'])/base_sum['cum_dross_kg']*100):.1f}%",
-                delta_color="normal"
-            )
-        with col4:
-            st.metric(
-                label="最佳 Melt-to-Hold 切換點",
-                value=f"{opt_params['t_switch_hrs']} 小時",
-                delta=f"設點 {opt_params['sp_roof_melt']}°C → {opt_params['sp_roof_hold']}°C",
+                label="傳統天然氣總耗量",
+                value=f"{base_sum['cum_gas_nm3']:,.1f} Nm³",
+                delta=f"單耗 {base_gas_per_t:.1f} Nm³/t",
                 delta_color="off"
             )
-        with col5:
+        with b_col3:
             st.metric(
-                label="最佳過剩空氣率 / 殘氧",
+                label="傳統氧化燒損渣量",
+                value=f"{base_sum['cum_dross_kg']:.1f} kg",
+                delta=f"燒損率 {base_dross_pct:.2f}%",
+                delta_color="off"
+            )
+        with b_col4:
+            st.metric(
+                label="傳統控溫操作",
+                value=f"{baseline_roof_sp:.0f}°C 全火",
+                delta=f"{baseline_switch_hrs:.1f}h 改鋁湯控制",
+                delta_color="off"
+            )
+        with b_col5:
+            st.metric(
+                label="傳統過剩空氣 / 殘氧",
+                value=f"{excess_air_pct:.1f}%",
+                delta=f"{est_o2:.2f}% O₂",
+                delta_color="off"
+            )
+
+        # Row 2: 最佳化升溫模式與效益 (Optimal Strategy & Savings)
+        st.markdown("##### 🚀 最佳化階梯升溫模式與降減效益 (Optimal & Savings vs. Baseline)")
+        o_col1, o_col2, o_col3, o_col4, o_col5 = st.columns(5)
+        with o_col1:
+            st.metric(
+                label="最佳化每爐總成本",
+                value=f"${opt_sum['total_cost']:,.0f} TWD",
+                delta=f"-${savings['cost_savings_twd']:,.0f} (-{savings['cost_savings_pct']:.1f}%)",
+                delta_color="normal",
+                help=f"天然氣費 ${opt_sum['gas_cost']:,.0f} + 氧化燒損金屬損失 ${opt_sum['dross_cost']:,.0f}"
+            )
+        with o_col2:
+            st.metric(
+                label="最佳化天然氣耗量",
+                value=f"{opt_sum['cum_gas_nm3']:,.1f} Nm³",
+                delta=f"-{savings['gas_savings_nm3']:,.1f} Nm³ (-{gas_pct:.1f}%)",
+                delta_color="normal"
+            )
+        with o_col3:
+            st.metric(
+                label="最佳化氧化燒損渣量",
+                value=f"{opt_sum['cum_dross_kg']:.1f} kg",
+                delta=f"-{savings['dross_savings_kg']:.1f} kg (-{dross_pct:.1f}%)",
+                delta_color="normal"
+            )
+        with o_col4:
+            st.metric(
+                label="最佳 Melt-to-Hold 切換點",
+                value=f"{opt_params['t_switch_hrs']:.1f} 小時",
+                delta=f"{opt_params['sp_roof_melt']:.0f}°C → {opt_params['sp_roof_hold']:.0f}°C",
+                delta_color="off"
+            )
+        with o_col5:
+            st.metric(
+                label="最佳過剩空氣 / 殘氧",
                 value=f"{opt_params['excess_air_pct']:.1f}%",
                 delta=f"{opt_params['flue_o2_pct']:.2f}% O₂",
                 delta_color="off"
             )
+
+        # Structured comparison table
+        with st.expander("📋 點此展開「傳統 vs. 最佳化」各項指標詳細對照表", expanded=True):
+            df_compare = pd.DataFrame({
+                "指標項目 (Metric)": [
+                    "每爐綜合生產成本 (Total Cost)",
+                    "  └ 天然氣費用 (Gas Cost)",
+                    "  └ 鋁金屬燒損損失 (Dross Metal Loss)",
+                    "天然氣總耗量 (Total Gas Consumption)",
+                    "天然氣單耗 (Specific Gas Consumption)",
+                    "鋁錠氧化燒損量 (Dross Generated)",
+                    "投料燒損率 (Dross Loss %)",
+                    "Melt-to-Hold 切換時間 (Switchover Time)",
+                    "熔化期/保溫期 頂溫設點 (Roof Temp Setpoints)",
+                    "過剩空氣率 / 煙道殘氧 (Excess Air / Flue O₂)",
+                    "出湯達成時限 (Target Deadline Met)"
+                ],
+                "傳統操作基準 (Baseline)": [
+                    f"${base_sum['total_cost']:,.0f} TWD",
+                    f"${base_sum['gas_cost']:,.0f} TWD",
+                    f"${base_sum['dross_cost']:,.0f} TWD",
+                    f"{base_sum['cum_gas_nm3']:,.1f} Nm³",
+                    f"{base_gas_per_t:.1f} Nm³/t",
+                    f"{base_sum['cum_dross_kg']:.1f} kg",
+                    f"{base_dross_pct:.2f}%",
+                    f"{baseline_switch_hrs:.1f} 小時",
+                    f"{baseline_roof_sp:.0f}°C → 鋁湯保溫",
+                    f"{excess_air_pct:.1f}% ({est_o2:.2f}% O₂)",
+                    f"達標 ({base_sum['final_bath_temp_c']:.1f}°C)"
+                ],
+                "最佳化階梯升溫 (Optimal)": [
+                    f"${opt_sum['total_cost']:,.0f} TWD",
+                    f"${opt_sum['gas_cost']:,.0f} TWD",
+                    f"${opt_sum['dross_cost']:,.0f} TWD",
+                    f"{opt_sum['cum_gas_nm3']:,.1f} Nm³",
+                    f"{opt_gas_per_t:.1f} Nm³/t",
+                    f"{opt_sum['cum_dross_kg']:.1f} kg",
+                    f"{opt_dross_pct:.2f}%",
+                    f"{opt_params['t_switch_hrs']:.1f} 小時",
+                    f"{opt_params['sp_roof_melt']:.0f}°C → {opt_params['sp_roof_hold']:.0f}°C",
+                    f"{opt_params['excess_air_pct']:.1f}% ({opt_params['flue_o2_pct']:.2f}% O₂)",
+                    f"{'✅ 準時出湯' if res['deadline_met'] else '⚠️ 未達時限'} ({opt_sum['final_bath_temp_c']:.1f}°C)"
+                ],
+                "改善效益 (Improvement / Savings)": [
+                    f"節省 -${savings['cost_savings_twd']:,.0f} (-{savings['cost_savings_pct']:.1f}%)",
+                    f"節省 -${base_sum['gas_cost'] - opt_sum['gas_cost']:,.0f} (-{((base_sum['gas_cost'] - opt_sum['gas_cost'])/base_sum['gas_cost']*100) if base_sum['gas_cost']>0 else 0:.1f}%)",
+                    f"減少 -${base_sum['dross_cost'] - opt_sum['dross_cost']:,.0f} (-{((base_sum['dross_cost'] - opt_sum['dross_cost'])/base_sum['dross_cost']*100) if base_sum['dross_cost']>0 else 0:.1f}%)",
+                    f"節約 -{savings['gas_savings_nm3']:,.1f} Nm³ (-{gas_pct:.1f}%)",
+                    f"下降 -{base_gas_per_t - opt_gas_per_t:.1f} Nm³/t (-{gas_pct:.1f}%)",
+                    f"減少 -{savings['dross_savings_kg']:.1f} kg (-{dross_pct:.1f}%)",
+                    f"降低 -{base_dross_pct - opt_dross_pct:.2f} 個百分點",
+                    f"提前 {baseline_switch_hrs - opt_params['t_switch_hrs']:.1f} 小時轉保溫" if baseline_switch_hrs > opt_params['t_switch_hrs'] else "調整切換點",
+                    "階梯式動態控溫降低過熱",
+                    f"過剩空氣減少 {excess_air_pct - opt_params['excess_air_pct']:.1f}%",
+                    "符合出湯工藝時限要求"
+                ]
+            })
+            st.dataframe(df_compare, use_container_width=True, hide_index=True)
             
         st.markdown("---")
         
