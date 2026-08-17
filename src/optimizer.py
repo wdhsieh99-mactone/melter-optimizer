@@ -23,6 +23,31 @@ except ImportError:
     )
 
 
+def format_hours_to_hhmm(hours: float) -> str:
+    """Converts decimal hours (e.g. 2.4) to string format '02:24'."""
+    total_mins = int(round(max(0.0, float(hours)) * 60))
+    h = total_mins // 60
+    m = total_mins % 60
+    return f"{h:02d}:{m:02d}"
+
+
+def parse_hhmm_to_hours(val, default: float = 0.0) -> float:
+    """Converts hh:mm string (e.g. '04:00') or float to decimal hours."""
+    if val is None:
+        return default
+    try:
+        val_str = str(val).strip()
+        if ':' in val_str:
+            parts = val_str.split(':')
+            h = int(parts[0])
+            m = int(parts[1])
+            return max(0.0, h + m / 60.0)
+        else:
+            return max(0.0, float(val_str))
+    except Exception:
+        return default
+
+
 class HeatingCurveOptimizer:
     """Simulates and optimizes heating curves for aluminum melting furnaces."""
 
@@ -47,15 +72,7 @@ class HeatingCurveOptimizer:
         sp_roof_soak: Optional[float] = None,
         t_soak_end_hrs: Optional[float] = None,
     ) -> Tuple[pd.DataFrame, Dict[str, float]]:
-        """Simulates time-step thermodynamic progression with alloy properties & 4-burner 2-pair states.
-
-        residual_weight_kg (前爐殘湯, carry-in heel): mass of hot leftover molten metal already in
-        the furnace from the previous heat, on top of the cold charged_weight_kg scrap. Field
-        practice reports this at roughly 5-10 tonnes for this furnace. Defaults to 0.0 (matches
-        prior behavior of assuming the whole bath starts cold) -- pass a real figure to account for
-        it, since the residual arrives already near residual_temp_c (default: the alloy's liquidus,
-        i.e. still fully molten), which reduces the NEW heat input actually required this heat.
-        """
+        """Simulates time-step thermodynamic progression with alloy properties & 4-burner 2-pair states."""
         dt_hrs = dt_mins / 60.0
         n_steps = int(np.round(target_duration_hrs / dt_hrs))
 
@@ -69,9 +86,6 @@ class HeatingCurveOptimizer:
         if residual_temp_c is None:
             residual_temp_c = liquidus
 
-        # Total mass the bath energy balance must bring to target_bath_temp_c = cold charge +
-        # hot residual heel. cap_*_kj are the staged (solid -> latent -> liquid) energy
-        # requirements for that WHOLE mass starting from initial_bath_temp_c.
         total_weight_kg = charged_weight_kg + residual_weight_kg
         cap_solid_kj = total_weight_kg * cp_solid * (solidus - initial_bath_temp_c)
         cap_latent_kj = total_weight_kg * latent_h
@@ -84,13 +98,8 @@ class HeatingCurveOptimizer:
                 return solidus + frac * (liquidus - solidus)
             else:
                 liquid_energy_kj = energy_kj - cap_solid_kj - cap_latent_kj
-                # Pure physical metallurgical liquid sensible heat equation without artificial clamp:
                 return liquidus + liquid_energy_kj / (total_weight_kg * cp_liq)
 
-        # The residual heel arrives already carrying its own enthalpy (from initial_bath_temp_c up
-        # to residual_temp_c) -- it doesn't need to be heated from cold like the fresh charge does.
-        # This "head start" is expressed on the SAME total_weight_kg staged-energy basis as
-        # cap_solid/cap_latent above, so the two combine consistently.
         if residual_weight_kg > 0:
             current_energy_kj = self.model.calculate_theoretical_energy(
                 weight_kg=residual_weight_kg,
@@ -234,40 +243,65 @@ class HeatingCurveOptimizer:
         charged_weight_kg: float,
         target_duration_hrs: float,
         alloy_name: str = '5052',
-        baseline_roof_sp: float = 1100.0,
+        baseline_roof_sp: float = 1180.0,
         baseline_switch_hrs: Optional[float] = None,
         baseline_excess_air_pct: float = 25.0,
         target_bath_temp_c: float = 720.0,
         dt_mins: float = 1.0,
         residual_weight_kg: float = 0.0,
         residual_temp_c: Optional[float] = None,
+        baseline_dur_melt_hrs: Optional[float] = None,
+        baseline_sp_soak: Optional[float] = None,
+        baseline_dur_soak_hrs: Optional[float] = 0.0,
+        baseline_sp_hold: float = 760.0,
     ) -> Tuple[pd.DataFrame, Dict[str, float]]:
         """Simulates baseline plant practice:
-        Step 1: 0 to baseline_switch_hrs (e.g. 4.5h) with fixed roof SP 1100°C (Dual Pair full fire).
-        Step 2: baseline_switch_hrs to end with holding SP ~760°C (Single Pair holding fire).
+        Step 1: 0 to baseline_dur_melt_hrs (e.g. 4.0h) with fixed roof SP 1180°C (Dual Pair full fire Melt mode).
+        Step 2: (optional) Flat bath soak mode.
+        Step 3: Bath mode holding SP ~760°C (Single Pair holding fire).
         """
-        if baseline_switch_hrs is None:
-            baseline_switch_hrs = min(4.5, target_duration_hrs * 0.75)
-        return self.simulate_trajectory(
-            charged_weight_kg=charged_weight_kg,
-            target_duration_hrs=target_duration_hrs,
-            sp_roof_melt=baseline_roof_sp,
-            t_switch_hrs=baseline_switch_hrs,
-            sp_roof_hold=760.0,
-            alloy_name=alloy_name,
-            excess_air_pct=baseline_excess_air_pct,
-            target_bath_temp_c=target_bath_temp_c,
-            dt_mins=dt_mins,
-            residual_weight_kg=residual_weight_kg,
-            residual_temp_c=residual_temp_c,
-        )
+        dur_melt = baseline_dur_melt_hrs if baseline_dur_melt_hrs is not None else (baseline_switch_hrs if baseline_switch_hrs is not None else min(4.0, target_duration_hrs * 0.75))
+        dur_soak = baseline_dur_soak_hrs if baseline_dur_soak_hrs is not None else 0.0
+
+        if dur_soak > 0.05 and baseline_sp_soak is not None:
+            t_sw1 = dur_melt
+            t_sw2 = min(target_duration_hrs, dur_melt + dur_soak)
+            return self.simulate_trajectory(
+                charged_weight_kg=charged_weight_kg,
+                target_duration_hrs=target_duration_hrs,
+                sp_roof_melt=baseline_roof_sp,
+                t_switch_hrs=t_sw1,
+                sp_roof_soak=baseline_sp_soak,
+                t_soak_end_hrs=t_sw2,
+                sp_roof_hold=baseline_sp_hold,
+                alloy_name=alloy_name,
+                excess_air_pct=baseline_excess_air_pct,
+                target_bath_temp_c=target_bath_temp_c,
+                dt_mins=dt_mins,
+                residual_weight_kg=residual_weight_kg,
+                residual_temp_c=residual_temp_c,
+            )
+        else:
+            return self.simulate_trajectory(
+                charged_weight_kg=charged_weight_kg,
+                target_duration_hrs=target_duration_hrs,
+                sp_roof_melt=baseline_roof_sp,
+                t_switch_hrs=dur_melt,
+                sp_roof_hold=baseline_sp_hold,
+                alloy_name=alloy_name,
+                excess_air_pct=baseline_excess_air_pct,
+                target_bath_temp_c=target_bath_temp_c,
+                dt_mins=dt_mins,
+                residual_weight_kg=residual_weight_kg,
+                residual_temp_c=residual_temp_c,
+            )
 
     def optimize_heating_curve(
         self,
         charged_weight_kg: float,
         discharge_deadline_hrs: float,
         alloy_name: str = '5052',
-        baseline_roof_sp: float = 1100.0,
+        baseline_roof_sp: float = 1180.0,
         baseline_switch_hrs: Optional[float] = None,
         baseline_excess_air_pct: float = 20.0,
         target_bath_temp_c: float = 720.0,
@@ -275,6 +309,10 @@ class HeatingCurveOptimizer:
         dt_mins: float = 1.0,
         residual_weight_kg: float = 0.0,
         residual_temp_c: Optional[float] = None,
+        baseline_dur_melt_hrs: Optional[float] = None,
+        baseline_sp_soak: Optional[float] = None,
+        baseline_dur_soak_hrs: Optional[float] = 0.0,
+        baseline_sp_hold: float = 760.0,
     ) -> Dict:
         """Finds the optimal discrete multi-step schedule (Step 1 Melt -> Step 2 Flat -> Step 3 Hold)
         that minimizes gas + dross cost, SUBJECT TO reaching target_bath_temp_c by discharge_deadline_hrs.
@@ -331,6 +369,8 @@ class HeatingCurveOptimizer:
                 baseline_excess_air_pct=baseline_excess_air_pct, dt_mins=dt_mins,
                 residual_weight_kg=residual_weight_kg, residual_temp_c=residual_temp_c,
                 target_bath_temp_c=target_bath_temp_c,
+                baseline_dur_melt_hrs=baseline_dur_melt_hrs, baseline_sp_soak=baseline_sp_soak,
+                baseline_dur_soak_hrs=baseline_dur_soak_hrs, baseline_sp_hold=baseline_sp_hold,
             )
             best_params = (max_roof_sp_limit, discharge_deadline_hrs * 0.70, 1000.0, discharge_deadline_hrs * 0.85, 760.0, baseline_excess_air_pct)
 
@@ -340,6 +380,8 @@ class HeatingCurveOptimizer:
             baseline_excess_air_pct=baseline_excess_air_pct, dt_mins=dt_mins,
             residual_weight_kg=residual_weight_kg, residual_temp_c=residual_temp_c,
             target_bath_temp_c=target_bath_temp_c,
+            baseline_dur_melt_hrs=baseline_dur_melt_hrs, baseline_sp_soak=baseline_sp_soak,
+            baseline_dur_soak_hrs=baseline_dur_soak_hrs, baseline_sp_hold=baseline_sp_hold,
         )
         
         cost_savings_twd = summary_base['total_cost'] - best_summary['total_cost']
@@ -347,6 +389,45 @@ class HeatingCurveOptimizer:
         gas_savings_nm3 = summary_base['cum_gas_nm3'] - best_summary['cum_gas_nm3']
         dross_savings_kg = summary_base['cum_dross_kg'] - best_summary['cum_dross_kg']
         deadline_met = best_summary['final_bath_temp_c'] >= (target_bath_temp_c - 5.0)
+
+        t_sw1_val = float(best_params[1])
+        t_sw2_val = float(best_params[3])
+        dur1_val = t_sw1_val
+        dur2_val = max(0.0, t_sw2_val - t_sw1_val)
+        dur3_val = max(0.0, discharge_deadline_hrs - t_sw2_val)
+
+        recipe_steps = [
+            {
+                'step': 1,
+                'mode_name': '主融化模式 (Melt Mode)',
+                'sp_roof_c': float(best_params[0]),
+                'duration_hrs': round(dur1_val, 2),
+                'duration_hhmm': format_hours_to_hhmm(dur1_val),
+                'interval_hhmm': f"00:00 ~ {format_hours_to_hhmm(t_sw1_val)}",
+                'burner_mode': '雙對燒嘴交替大火 (Dual Pair)',
+                'goal': '高功率全火快速熔解固態料堆'
+            },
+            {
+                'step': 2,
+                'mode_name': '平湯昇溫模式 (Flat Bath Mode)',
+                'sp_roof_c': float(best_params[2]),
+                'duration_hrs': round(dur2_val, 2),
+                'duration_hhmm': format_hours_to_hhmm(dur2_val),
+                'interval_hhmm': f"{format_hours_to_hhmm(t_sw1_val)} ~ {format_hours_to_hhmm(t_sw2_val)}",
+                'burner_mode': '雙對燒嘴交替中火',
+                'goal': '全融平湯及時降溫，抑止鋁液高溫氧化燒損'
+            },
+            {
+                'step': 3,
+                'mode_name': '湯溫保溫模式 (Bath Mode)',
+                'sp_roof_c': float(best_params[4]),
+                'duration_hrs': round(dur3_val, 2),
+                'duration_hhmm': format_hours_to_hhmm(dur3_val),
+                'interval_hhmm': f"{format_hours_to_hhmm(t_sw2_val)} ~ {format_hours_to_hhmm(discharge_deadline_hrs)}",
+                'burner_mode': '單對燒嘴交替微火 (Single Pair)',
+                'goal': f'維持出湯目標湯溫 {target_bath_temp_c:.0f}°C，熱平衡待出湯'
+            }
+        ]
 
         return {
             'optimal_params': {
@@ -358,6 +439,7 @@ class HeatingCurveOptimizer:
                 'excess_air_pct': float(best_params[5]),
                 'flue_o2_pct': round(self.model.calculate_flue_oxygen_pct(best_params[5]), 2),
             },
+            'recipe_steps': recipe_steps,
             'discharge_deadline_hrs': discharge_deadline_hrs,
             'deadline_met': bool(deadline_met),
             'optimal_summary': best_summary,

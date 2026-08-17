@@ -13,11 +13,11 @@ import os
 
 try:
     from src.physics_model import MelterPhysicsModel, ALLOY_PROPERTIES, _CALIBRATED_CONSTANTS_PATH
-    from src.optimizer import HeatingCurveOptimizer
+    from src.optimizer import HeatingCurveOptimizer, format_hours_to_hhmm, parse_hhmm_to_hours
     from src.evaluator import MelterEvaluator
 except ImportError:
     from physics_model import MelterPhysicsModel, ALLOY_PROPERTIES, _CALIBRATED_CONSTANTS_PATH
-    from optimizer import HeatingCurveOptimizer
+    from optimizer import HeatingCurveOptimizer, format_hours_to_hhmm, parse_hhmm_to_hours
     from evaluator import MelterEvaluator
 
 
@@ -199,15 +199,34 @@ def main():
     target_bath_temp = st.sidebar.slider("目標出液湯溫 (°C)", min_value=680.0, max_value=760.0, value=720.0, step=5.0)
     max_roof_sp_limit = st.sidebar.slider("頂頭最高安全溫度天花板 (°C)", min_value=1100.0, max_value=1250.0, value=1200.0, step=10.0)
     
-    st.sidebar.subheader("2. 傳統操作基準模式設定 (Traditional Practice)")
-    baseline_roof_sp = st.sidebar.slider(
-        "傳統固定頂溫設點 (°C)", min_value=1000.0, max_value=1200.0, value=1100.0, step=10.0,
-        help="傳統熔化前期以固定爐頂溫度設點全火加熱 (例如 1100°C)。"
-    )
-    baseline_switch_hrs = st.sidebar.slider(
-        "傳統改鋁湯控制時間 (小時)", min_value=1.0, max_value=8.0, value=4.5, step=0.5,
-        help="現場操作經驗：約 4.5 小時查看熔解狀況後，由爐頂溫控制切換為鋁湯溫度控制模式。"
-    )
+    st.sidebar.subheader("2. 現場傳統操作基準設定 (3段溫控)")
+    with st.sidebar.expander("🛠️ 現場傳統溫控參數 (Melt / Flat / Bath Mode)", expanded=True):
+        st.markdown("**第 1 段：融化模式 (Melt Mode)**")
+        col_t1_sp, col_t1_dur = st.columns([1, 1])
+        with col_t1_sp:
+            base_sp1 = st.number_input("第1段目標頂溫 (°C)", min_value=900.0, max_value=1250.0, value=1180.0, step=10.0, key="base_sp1", help="加料完成關門後融化大火目標頂溫 (現場確認為 1180°C)")
+        with col_t1_dur:
+            base_dur1_str = st.text_input("第1段持續時間 (hh:mm)", value="04:00", key="base_dur1", help="融化模式大火持續時間 (現場確認為 04:00 出警示)")
+
+        st.markdown("**第 2 段：平湯/過渡段 (Flat Bath Mode)**")
+        col_t2_sp, col_t2_dur = st.columns([1, 1])
+        with col_t2_sp:
+            base_sp2 = st.number_input("第2段目標頂溫 (°C)", min_value=800.0, max_value=1150.0, value=950.0, step=10.0, key="base_sp2")
+        with col_t2_dur:
+            base_dur2_str = st.text_input("第2段持續時間 (hh:mm)", value="00:00", key="base_dur2", help="若現場無過渡段直接切換湯溫，持續時間設為 00:00")
+
+        st.markdown("**第 3 段：湯溫/保溫模式 (Bath Mode)**")
+        col_t3_sp, col_t3_dur = st.columns([1, 1])
+        with col_t3_sp:
+            base_sp3 = st.number_input("第3段保溫設點 (°C)", min_value=700.0, max_value=900.0, value=760.0, step=10.0, key="base_sp3", help="改用湯溫控制模式後之保溫設點")
+        with col_t3_dur:
+            dur1_hrs = parse_hhmm_to_hours(base_dur1_str, default=4.0)
+            dur2_hrs = parse_hhmm_to_hours(base_dur2_str, default=0.0)
+            rem_hrs = max(0.0, target_duration_hrs - dur1_hrs - dur2_hrs)
+            st.caption(f"第3段持續時間：自動為剩餘 **{format_hours_to_hhmm(rem_hrs)}**")
+
+    baseline_roof_sp = base_sp1
+    baseline_switch_hrs = dur1_hrs
 
     st.sidebar.subheader("3. 空氣燃氣比與殘氧設定")
     excess_air_pct = st.sidebar.slider("基準過剩空氣率 Excess Air (%)", min_value=5.0, max_value=30.0, value=25.0, step=1.0)
@@ -242,8 +261,11 @@ def main():
                 residual_weight_kg=residual_weight_kg,
                 discharge_deadline_hrs=target_duration_hrs,
                 alloy_name=selected_alloy,
-                baseline_roof_sp=baseline_roof_sp,
-                baseline_switch_hrs=baseline_switch_hrs,
+                baseline_roof_sp=base_sp1,
+                baseline_dur_melt_hrs=dur1_hrs,
+                baseline_sp_soak=base_sp2,
+                baseline_dur_soak_hrs=dur2_hrs,
+                baseline_sp_hold=base_sp3,
                 baseline_excess_air_pct=excess_air_pct,
                 target_bath_temp_c=target_bath_temp,
                 max_roof_sp_limit=max_roof_sp_limit,
@@ -253,6 +275,7 @@ def main():
         opt_sum = res['optimal_summary']
         base_sum = res['baseline_summary']
         savings = res['savings']
+        recipe_steps = res.get('recipe_steps', [])
 
         df_opt = res['optimal_trajectory']
         df_base = res['baseline_trajectory']
@@ -279,7 +302,7 @@ def main():
 
         st.markdown("#### 📌 熔煉能耗、成本與燒損綜合對照 (Baseline vs. Optimal Summary)")
 
-        # Row 1: 傳統操作基準模式 (Baseline Practice)
+        # Row 1: 傳統操作模式基準 (Baseline Practice) - 純絕對值呈現，不帶 delta 比較以免混淆
         st.markdown("##### 🏛️ 傳統操作模式基準 (Baseline Practice)")
         b_col1, b_col2, b_col3, b_col4, b_col5 = st.columns(5)
         with b_col1:
@@ -292,32 +315,32 @@ def main():
             st.metric(
                 label="傳統天然氣總耗量",
                 value=f"{base_sum['cum_gas_nm3']:,.1f} Nm³",
-                delta=f"單耗 {base_gas_per_t:.1f} Nm³/t",
-                delta_color="off"
+                help=f"天然氣單耗: {base_gas_per_t:.1f} Nm³/t"
             )
+            st.caption(f"📊 單耗: **{base_gas_per_t:.1f} Nm³/t**")
         with b_col3:
             st.metric(
                 label="傳統氧化燒損渣量",
                 value=f"{base_sum['cum_dross_kg']:.1f} kg",
-                delta=f"燒損率 {base_dross_pct:.2f}%",
-                delta_color="off"
+                help=f"投料氧化燒損率: {base_dross_pct:.2f}%"
             )
+            st.caption(f"🔥 燒損率: **{base_dross_pct:.2f}%**")
         with b_col4:
             st.metric(
-                label="傳統控溫操作",
-                value=f"{baseline_roof_sp:.0f}°C 全火",
-                delta=f"{baseline_switch_hrs:.1f}h 改鋁湯控制",
-                delta_color="off"
+                label="現場傳統溫控模式",
+                value=f"{base_sp1:.0f}°C ({base_dur1_str})",
+                help=f"現場加料完成關門後以融化模式 {base_sp1:.0f}°C 持續大火升溫，{base_dur1_str} 警示提示改用湯溫模式。"
             )
+            st.caption(f"⏱️ {base_dur1_str} 警示轉湯溫 {base_sp3:.0f}°C")
         with b_col5:
             st.metric(
-                label="傳統過剩空氣 / 殘氧",
+                label="傳統過剩空氣率",
                 value=f"{excess_air_pct:.1f}%",
-                delta=f"{est_o2:.2f}% O₂",
-                delta_color="off"
+                help="傳統操作空燃比設定"
             )
+            st.caption(f"💨 煙道殘氧: **{est_o2:.2f}% O₂**")
 
-        # Row 2: 最佳化升溫模式與效益 (Optimal Strategy & Savings)
+        # Row 2: 最佳化升溫模式與效益 (Optimal Strategy & Savings vs. Baseline)
         st.markdown("##### 🚀 最佳化階梯升溫模式與降減效益 (Optimal & Savings vs. Baseline)")
         o_col1, o_col2, o_col3, o_col4, o_col5 = st.columns(5)
         with o_col1:
@@ -335,6 +358,7 @@ def main():
                 delta=f"-{savings['gas_savings_nm3']:,.1f} Nm³ (-{gas_pct:.1f}%)",
                 delta_color="normal"
             )
+            st.caption(f"📊 單耗: **{opt_gas_per_t:.1f} Nm³/t**")
         with o_col3:
             st.metric(
                 label="最佳化氧化燒損渣量",
@@ -342,20 +366,24 @@ def main():
                 delta=f"-{savings['dross_savings_kg']:.1f} kg (-{dross_pct:.1f}%)",
                 delta_color="normal"
             )
+            st.caption(f"🔥 燒損率: **{opt_dross_pct:.2f}%**")
         with o_col4:
             st.metric(
                 label="最佳 3 段階梯控溫",
-                value=f"3 段階梯控制",
+                value="3 段階梯控制",
                 delta=f"{opt_params['sp_roof_melt']:.0f}°C → {opt_params['sp_roof_soak']:.0f}°C → {opt_params['sp_roof_hold']:.0f}°C",
                 delta_color="off"
             )
+            if recipe_steps and len(recipe_steps) == 3:
+                st.caption(f"⏱️ 時段: **{recipe_steps[0]['duration_hhmm']} + {recipe_steps[1]['duration_hhmm']} + {recipe_steps[2]['duration_hhmm']}**")
         with o_col5:
             st.metric(
-                label="最佳過剩空氣 / 殘氧",
+                label="最佳過剩空氣率",
                 value=f"{opt_params['excess_air_pct']:.1f}%",
                 delta=f"{opt_params['flue_o2_pct']:.2f}% O₂",
                 delta_color="off"
             )
+            st.caption(f"💨 煙道殘氧: **{opt_params['flue_o2_pct']:.2f}% O₂**")
 
         # Structured comparison table
         with st.expander("📋 點此展開「傳統 vs. 最佳化」各項指標詳細對照表", expanded=True):
@@ -368,7 +396,7 @@ def main():
                     "天然氣單耗 (Specific Gas Consumption)",
                     "鋁錠氧化燒損量 (Dross Generated)",
                     "投料燒損率 (Dross Loss %)",
-                    "各階梯切換時機 (Step Transition Timing)",
+                    "三段溫控時段 (3-Step Timing Intervals)",
                     "熔化/平湯/保溫 頂溫設點 (Stepwise Roof SP)",
                     "過剩空氣率 / 煙道殘氧 (Excess Air / Flue O₂)",
                     "出湯達成時限 (Target Deadline Met)"
@@ -381,8 +409,8 @@ def main():
                     f"{base_gas_per_t:.1f} Nm³/t",
                     f"{base_sum['cum_dross_kg']:.1f} kg",
                     f"{base_dross_pct:.2f}%",
-                    f"0~{baseline_switch_hrs:.1f}h 全火 → 轉湯溫",
-                    f"{baseline_roof_sp:.0f}°C → 760°C 保溫",
+                    f"00:00~{format_hours_to_hhmm(dur1_hrs)} (融化) → 轉湯溫保溫",
+                    f"{base_sp1:.0f}°C (融化) → {base_sp3:.0f}°C (保溫)",
                     f"{excess_air_pct:.1f}% ({est_o2:.2f}% O₂)",
                     f"達標 ({base_sum['final_bath_temp_c']:.1f}°C)"
                 ],
@@ -394,8 +422,8 @@ def main():
                     f"{opt_gas_per_t:.1f} Nm³/t",
                     f"{opt_sum['cum_dross_kg']:.1f} kg",
                     f"{opt_dross_pct:.2f}%",
-                    f"第1段: 0~{opt_params['t_switch_hrs']:.1f}h | 第2段: {opt_params['t_switch_hrs']:.1f}~{opt_params['t_soak_end_hrs']:.1f}h | 第3段: {opt_params['t_soak_end_hrs']:.1f}~{target_duration_hrs:.1f}h",
-                    f"{opt_params['sp_roof_melt']:.0f}°C → {opt_params['sp_roof_soak']:.0f}°C → {opt_params['sp_roof_hold']:.0f}°C",
+                    f"第1段: 00:00~{format_hours_to_hhmm(opt_params['t_switch_hrs'])} | 第2段: {format_hours_to_hhmm(opt_params['t_switch_hrs'])}~{format_hours_to_hhmm(opt_params['t_soak_end_hrs'])} | 第3段: {format_hours_to_hhmm(opt_params['t_soak_end_hrs'])}~{format_hours_to_hhmm(target_duration_hrs)}",
+                    f"{opt_params['sp_roof_melt']:.0f}°C (主熔) → {opt_params['sp_roof_soak']:.0f}°C (平湯) → {opt_params['sp_roof_hold']:.0f}°C (保溫)",
                     f"{opt_params['excess_air_pct']:.1f}% ({opt_params['flue_o2_pct']:.2f}% O₂)",
                     f"{'✅ 準時出湯' if res['deadline_met'] else '⚠️ 未達時限'} ({opt_sum['final_bath_temp_c']:.1f}°C)"
                 ],
@@ -407,7 +435,7 @@ def main():
                     f"下降 -{base_gas_per_t - opt_gas_per_t:.1f} Nm³/t (-{gas_pct:.1f}%)",
                     f"減少 -{savings['dross_savings_kg']:.1f} kg (-{dross_pct:.1f}%)",
                     f"降低 -{base_dross_pct - opt_dross_pct:.2f} 個百分點",
-                    f"平湯及時降溫 {opt_params['sp_roof_melt'] - opt_params['sp_roof_soak']:.0f}°C 抑止氧化",
+                    f"主熔提早至 {format_hours_to_hhmm(opt_params['t_switch_hrs'])} 轉平湯降火",
                     "3 段階梯設定值，符合現場 PLC/DCS 執行需求",
                     f"過剩空氣減少 {excess_air_pct - opt_params['excess_air_pct']:.1f}%",
                     "符合出湯工藝時限要求"
@@ -425,7 +453,7 @@ def main():
         # Baseline curves
         fig1.add_trace(go.Scatter(
             x=df_base['time_hrs'], y=df_base['sp_roof_c'],
-            name=f'傳統 2 段階梯設點 ({baseline_roof_sp:.0f}°C → {baseline_switch_hrs:.1f}h 轉 760°C)',
+            name=f'現場傳統模式設點 (Melt {base_sp1:.0f}°C / {base_dur1_str} → Bath {base_sp3:.0f}°C)',
             line=dict(color='#E53935', dash='dash')
         ))
         fig1.add_trace(go.Scatter(
@@ -457,8 +485,8 @@ def main():
 
         # Vertical line at the traditional bath control switchover point
         fig1.add_vline(
-            x=baseline_switch_hrs, line_dash="dot", line_color="#E53935", line_width=1.5,
-            annotation_text=f"傳統改湯溫 {baseline_switch_hrs:.1f}h", annotation_position="bottom right"
+            x=dur1_hrs, line_dash="dot", line_color="#E53935", line_width=1.5,
+            annotation_text=f"傳統改湯溫 ({base_dur1_str})", annotation_position="bottom right"
         )
 
         # Vertical line at the required discharge (tap-out) deadline.
@@ -468,7 +496,6 @@ def main():
         )
 
         # Start-of-melt (bath temp reaches solidus) / end-of-melt (reaches liquidus) markers
-        # on the optimized bath temperature curve.
         start_melt_rows = df_opt[df_opt['bath_temp_c'] >= props['solidus']]
         end_melt_rows = df_opt[df_opt['bath_temp_c'] >= props['liquidus']]
         if not start_melt_rows.empty:
@@ -487,7 +514,7 @@ def main():
             ))
 
         fig1.update_layout(
-            title=f"鋁種 [{selected_alloy}] 升溫動態軌跡 (傳統 {baseline_roof_sp:.0f}°C/{baseline_switch_hrs:.1f}h 模式 vs. 最佳化階梯模式)",
+            title=f"鋁種 [{selected_alloy}] 升溫動態軌跡 (現場傳統模式 vs. 最佳化 3 段階梯模式)",
             xaxis_title="熔煉時間 (小時)",
             yaxis_title="溫度 (°C)",
             hovermode="x unified",
@@ -495,33 +522,49 @@ def main():
         finalize_chart_layout(fig1, height=560)
         st.plotly_chart(fig1, use_container_width=True)
 
-        # Multi-Step Discrete Recipe Card for Field / DCS implementation
-        st.markdown("##### 📝 DCS / PLC 現場 3 段階梯設定配方 (Stepwise Temperature Control Recipe)")
-        rc1, rc2, rc3 = st.columns(3)
-        with rc1:
-            st.info(
-                f"**第 1 段：主熔化段 (Main Melt)**\n\n"
-                f"- **時段**：`0.0 h ~ {opt_params['t_switch_hrs']:.1f} h`\n"
-                f"- **頂溫設點**：`{opt_params['sp_roof_melt']:.0f} °C` (水平固定)\n"
-                f"- **燃燒模式**：雙對燒嘴交替全火 (Dual Pair)\n"
-                f"- **工藝目的**：高功率迅速穿透固態料堆並完成相變熔解"
-            )
-        with rc2:
-            st.info(
-                f"**第 2 段：平湯昇溫段 (Flat Bath)**\n\n"
-                f"- **時段**：`{opt_params['t_switch_hrs']:.1f} h ~ {opt_params['t_soak_end_hrs']:.1f} h`\n"
-                f"- **頂溫設點**：`{opt_params['sp_roof_soak']:.0f} °C` (水平固定)\n"
-                f"- **燃燒模式**：雙對燒嘴交替中火\n"
-                f"- **工藝目的**：全融平湯後及時降階，抑制鋁液高溫氧化燒損"
-            )
-        with rc3:
-            st.info(
-                f"**第 3 段：出湯保溫段 (Hold & Tap)**\n\n"
-                f"- **時段**：`{opt_params['t_soak_end_hrs']:.1f} h ~ {target_duration_hrs:.1f} h`\n"
-                f"- **頂溫設點**：`{opt_params['sp_roof_hold']:.0f} °C` (水平固定)\n"
-                f"- **燃燒模式**：單對燒嘴微火/保溫火 (Single Pair)\n"
-                f"- **工藝目的**：維持出湯目標湯溫 {target_bath_temp:.0f}°C，熱平衡待出湯"
-            )
+        # Multi-Step Discrete Recipe Table & Card for Field / DCS implementation
+        st.markdown("##### 📝 DCS / PLC 現場 3 段階梯操作配方 (Multi-Step Temperature Control Recipe)")
+        if recipe_steps:
+            df_recipe_table = pd.DataFrame([
+                {
+                    "階段 (Step)": f"第 {s['step']} 段",
+                    "工藝模式 (Mode)": s['mode_name'],
+                    "目標溫度設點 ($SP$)": f"{s['sp_roof_c']:.0f} °C",
+                    "持續時間 (Duration)": f"{s['duration_hhmm']} ({s['duration_hrs']:.2f}h)",
+                    "執行時段 (Interval)": s['interval_hhmm'],
+                    "燒嘴燃燒對切模式 (Burner Mode)": s['burner_mode'],
+                    "工藝目標 (Operational Goal)": s['goal'],
+                }
+                for s in recipe_steps
+            ])
+            st.dataframe(df_recipe_table, use_container_width=True, hide_index=True)
+
+            rc1, rc2, rc3 = st.columns(3)
+            s1, s2, s3 = recipe_steps[0], recipe_steps[1], recipe_steps[2]
+            with rc1:
+                st.info(
+                    f"**第 1 段：{s1['mode_name']}**\n\n"
+                    f"- **執行時段**：`{s1['interval_hhmm']}` (持續 **{s1['duration_hhmm']}**)\n"
+                    f"- **頂溫設點**：**`{s1['sp_roof_c']:.0f} °C`** (水平固定)\n"
+                    f"- **燃燒模式**：{s1['burner_mode']}\n"
+                    f"- **工藝目標**：{s1['goal']}"
+                )
+            with rc2:
+                st.info(
+                    f"**第 2 段：{s2['mode_name']}**\n\n"
+                    f"- **執行時段**：`{s2['interval_hhmm']}` (持續 **{s2['duration_hhmm']}**)\n"
+                    f"- **頂溫設點**：**`{s2['sp_roof_c']:.0f} °C`** (水平固定)\n"
+                    f"- **燃燒模式**：{s2['burner_mode']}\n"
+                    f"- **工藝目標**：{s2['goal']}"
+                )
+            with rc3:
+                st.info(
+                    f"**第 3 段：{s3['mode_name']}**\n\n"
+                    f"- **執行時段**：`{s3['interval_hhmm']}` (持續 **{s3['duration_hhmm']}**)\n"
+                    f"- **頂溫設點**：**`{s3['sp_roof_c']:.0f} °C`** (水平固定)\n"
+                    f"- **燃燒模式**：{s3['burner_mode']}\n"
+                    f"- **工藝目標**：{s3['goal']}"
+                )
 
         st.markdown("---")
 
