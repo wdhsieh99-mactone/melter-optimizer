@@ -248,32 +248,56 @@ def main():
     
     model.gas_price = gas_price
     model.aluminum_price = aluminum_price
+
+    st.sidebar.markdown("---")
+    btn_calc_sidebar = st.sidebar.button("🚀 執行最佳化模擬計算", type="primary", use_container_width=True, help="點擊後依照當前設定之工藝條件與傳統基準執行熱力學最佳化運算")
     
     # Main Tabs
     tab_title_bt = "📊 歷史爐次回測分析 (✅ 已解鎖)" if st.session_state.get('is_authenticated', False) else "📊 歷史爐次回測分析 (🔒 需授權)"
     tab_single, tab_backtest, tab_manual = st.tabs(["🚀 即時單爐最佳化模擬", tab_title_bt, "📖 4燒嘴蓄熱系統手冊"])
     
     with tab_single:
-        st.markdown(
-            f"<h3 style='font-size:1.35rem'>💡 鋁種 [{selected_alloy}] 最佳升溫與空燃比軌跡</h3>",
-            unsafe_allow_html=True,
-        )
-
-        with st.spinner("計算熱力學、空燃比與燒損最佳解..."):
-            res = optimizer.optimize_heating_curve(
-                charged_weight_kg=charged_weight_kg,
-                residual_weight_kg=residual_weight_kg,
-                discharge_deadline_hrs=target_duration_hrs,
-                alloy_name=selected_alloy,
-                baseline_roof_sp=base_sp1,
-                baseline_dur_melt_hrs=dur1_hrs,
-                baseline_sp_soak=base_sp2,
-                baseline_dur_soak_hrs=dur2_hrs,
-                baseline_sp_hold=base_sp3,
-                baseline_excess_air_pct=excess_air_pct,
-                target_bath_temp_c=target_bath_temp,
-                max_roof_sp_limit=max_roof_sp_limit,
+        col_hdr, col_btn = st.columns([3, 1])
+        with col_hdr:
+            st.markdown(
+                f"<h3 style='font-size:1.35rem; margin-bottom: 0px;'>💡 鋁種 [{selected_alloy}] 最佳升溫與空燃比軌跡</h3>",
+                unsafe_allow_html=True,
             )
+        with col_btn:
+            btn_calc_main = st.button("🚀 執行最佳化計算", type="primary", use_container_width=True, key="btn_calc_main", help="執行熱力學最佳化模擬計算")
+
+        current_inputs = {
+            'charged_weight_kg': charged_weight_kg,
+            'residual_weight_kg': residual_weight_kg,
+            'discharge_deadline_hrs': target_duration_hrs,
+            'alloy_name': selected_alloy,
+            'baseline_roof_sp': base_sp1,
+            'baseline_dur_melt_hrs': dur1_hrs,
+            'baseline_sp_soak': base_sp2,
+            'baseline_dur_soak_hrs': dur2_hrs,
+            'baseline_sp_hold': base_sp3,
+            'baseline_excess_air_pct': excess_air_pct,
+            'target_bath_temp_c': target_bath_temp,
+            'max_roof_sp_limit': max_roof_sp_limit,
+        }
+
+        should_recalc = btn_calc_sidebar or btn_calc_main or ('opt_result' not in st.session_state)
+        inputs_changed = ('last_calc_inputs' in st.session_state and st.session_state['last_calc_inputs'] != current_inputs)
+
+        if inputs_changed and not (btn_calc_sidebar or btn_calc_main):
+            st.warning("⚠️ **工藝設定條件已變更**：目前顯示為前次計算結果，請點擊上方【🚀 執行最佳化計算】按鈕以重新運算！")
+
+        if should_recalc:
+            with st.status("🔄 正在執行熱力學最佳化與 3 段階梯溫控運算...", expanded=True) as status:
+                st.write("📊 1. 計算固液相變潛熱、升溫比熱與浮渣層熱阻...")
+                st.write("🔥 2. 模擬雙對蓄熱式燒嘴空燃比與煙道殘氧動態...")
+                st.write("🔍 3. 搜尋 DCS 3 段階梯溫控、燃氣節流與最低燒損解...")
+                res = optimizer.optimize_heating_curve(**current_inputs)
+                st.session_state['opt_result'] = res
+                st.session_state['last_calc_inputs'] = current_inputs
+                status.update(label="✅ 最佳化計算完成！", state="complete", expanded=False)
+        else:
+            res = st.session_state['opt_result']
             
         opt_params = res['optimal_params']
         opt_sum = res['optimal_summary']
