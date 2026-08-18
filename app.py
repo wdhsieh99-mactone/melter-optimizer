@@ -12,13 +12,90 @@ import json
 import os
 
 try:
-    from src.physics_model import MelterPhysicsModel, ALLOY_PROPERTIES, _CALIBRATED_CONSTANTS_PATH
+    from src.physics_model import MelterPhysicsModel, ALLOY_PROPERTIES, _CALIBRATED_CONSTANTS_PATH, GAS_LHV
     from src.optimizer import HeatingCurveOptimizer, format_hours_to_hhmm, parse_hhmm_to_hours
     from src.evaluator import MelterEvaluator
 except ImportError:
-    from physics_model import MelterPhysicsModel, ALLOY_PROPERTIES, _CALIBRATED_CONSTANTS_PATH
+    from physics_model import MelterPhysicsModel, ALLOY_PROPERTIES, _CALIBRATED_CONSTANTS_PATH, GAS_LHV
     from optimizer import HeatingCurveOptimizer, format_hours_to_hhmm, parse_hhmm_to_hours
     from evaluator import MelterEvaluator
+
+
+def compute_sankey_balance_helper(
+    cum_gas_nm3: float,
+    cum_dross_kg: float,
+    charged_weight_kg: float,
+    residual_weight_kg: float,
+    duration_hrs: float,
+    final_bath_temp_c: float,
+    alloy_name: str = '5052',
+    excess_air_pct: float = 15.0,
+    wall_loss_kw: float = 250.0,
+    gas_lhv: float = 37256.0,
+) -> dict:
+    """Computes comprehensive Sankey energy balance (GJ)."""
+    props = ALLOY_PROPERTIES.get(alloy_name, ALLOY_PROPERTIES.get('DEFAULT', {'solidus': 607.0, 'liquidus': 650.0, 'latent_heat': 397.0, 'cp_liquid': 1.18}))
+    solidus = props['solidus']
+    liquidus = props['liquidus']
+    latent_h = props['latent_heat']
+    cp_liq = props['cp_liquid']
+    cp_solid = 0.90 # kJ/kg*K
+    
+    # 1. Inputs
+    q_fuel_gj = (cum_gas_nm3 * gas_lhv) / 1e6
+    q_ox_gj = (cum_dross_kg * 0.60 * 31.05) / 1000.0
+    
+    # 2. Output Sinks
+    total_metal_kg = charged_weight_kg + residual_weight_kg
+    delta_t_solid = min(solidus, final_bath_temp_c) - 25.0
+    sensible_solid = total_metal_kg * cp_solid * max(0.0, delta_t_solid)
+    latent_melt = total_metal_kg * latent_h if final_bath_temp_c >= liquidus else total_metal_kg * latent_h * 0.5
+    delta_t_liq = max(0.0, final_bath_temp_c - liquidus)
+    sensible_liquid = total_metal_kg * cp_liq * delta_t_liq
+    q_al_absorbed_gj = (sensible_solid + latent_melt + sensible_liquid) / 1e6
+    
+    cp_dross = 1.15 # kJ/kg*K
+    q_dross_sensible_gj = (cum_dross_kg * cp_dross * max(0.0, final_bath_temp_c - 25.0)) / 1e6
+    
+    avg_hearth_loss_kw = 85.0 * max(0.0, final_bath_temp_c - 25.0) / (780.0 - 25.0) * 0.75
+    q_wall_hearth_gj = ((wall_loss_kw + avg_hearth_loss_kw) * duration_hrs * 3600.0) / 1e6
+    
+    # 3. Flue Gas Enthalpy Balance & Regenerator Recovery
+    net_heat_to_flue_gj = max(1.0, (q_fuel_gj + q_ox_gj) - (q_al_absorbed_gj + q_dross_sensible_gj + q_wall_hearth_gj))
+    
+    regen_eff = 0.74 - (excess_air_pct - 15.0) * 0.003
+    regen_eff = max(0.60, min(0.78, regen_eff))
+    
+    q_roof_exhaust_gj = net_heat_to_flue_gj * 0.10
+    q_bed_flue_in_gj = net_heat_to_flue_gj * 0.90
+    q_air_preheat_gj = q_bed_flue_in_gj * regen_eff
+    q_stack_loss_gj = q_bed_flue_in_gj * (1.0 - regen_eff)
+    
+    total_chamber_input_gj = q_fuel_gj + q_ox_gj + q_air_preheat_gj
+    total_chamber_output_gj = q_al_absorbed_gj + q_dross_sensible_gj + q_wall_hearth_gj + q_roof_exhaust_gj + q_bed_flue_in_gj
+    
+    thermal_eff_fuel_pct = (q_al_absorbed_gj / q_fuel_gj) * 100.0 if q_fuel_gj > 0 else 0.0
+    thermal_eff_total_pct = (q_al_absorbed_gj / total_chamber_input_gj) * 100.0 if total_chamber_input_gj > 0 else 0.0
+    regen_recovery_pct = (q_air_preheat_gj / q_bed_flue_in_gj) * 100.0 if q_bed_flue_in_gj > 0 else 0.0
+    total_flue_loss_pct = ((q_roof_exhaust_gj + q_stack_loss_gj) / (q_fuel_gj + q_ox_gj)) * 100.0 if (q_fuel_gj + q_ox_gj) > 0 else 0.0
+    
+    return {
+        'q_fuel_gj': q_fuel_gj,
+        'q_ox_gj': q_ox_gj,
+        'q_air_preheat_gj': q_air_preheat_gj,
+        'total_chamber_input_gj': total_chamber_input_gj,
+        'q_al_absorbed_gj': q_al_absorbed_gj,
+        'q_dross_sensible_gj': q_dross_sensible_gj,
+        'q_wall_hearth_gj': q_wall_hearth_gj,
+        'q_roof_exhaust_gj': q_roof_exhaust_gj,
+        'q_bed_flue_in_gj': q_bed_flue_in_gj,
+        'q_stack_loss_gj': q_stack_loss_gj,
+        'total_chamber_output_gj': total_chamber_output_gj,
+        'thermal_eff_fuel_pct': thermal_eff_fuel_pct,
+        'thermal_eff_total_pct': thermal_eff_total_pct,
+        'regen_recovery_pct': regen_recovery_pct,
+        'total_flue_loss_pct': total_flue_loss_pct,
+    }
 
 
 CHART_FONT_SCALE = 1.2
@@ -743,7 +820,7 @@ def main():
         
         s_data = res.get('sankey_optimal') if '最佳化' in sankey_mode else res.get('sankey_baseline')
         if s_data is None:
-            s_data = model.calculate_sankey_energy_balance(
+            s_data = compute_sankey_balance_helper(
                 cum_gas_nm3=opt_sum['cum_gas_nm3'] if '最佳化' in sankey_mode else base_sum['cum_gas_nm3'],
                 cum_dross_kg=opt_sum['cum_dross_kg'] if '最佳化' in sankey_mode else base_sum['cum_dross_kg'],
                 charged_weight_kg=charged_weight_kg,
@@ -752,6 +829,7 @@ def main():
                 final_bath_temp_c=opt_sum['final_bath_temp_c'] if '最佳化' in sankey_mode else base_sum['final_bath_temp_c'],
                 alloy_name=selected_alloy,
                 excess_air_pct=opt_params['excess_air_pct'] if '最佳化' in sankey_mode else excess_air_pct,
+                gas_lhv=getattr(model, 'GAS_LHV', 37256.0),
             )
 
         sk_col1, sk_col2, sk_col3, sk_col4 = st.columns(4)
