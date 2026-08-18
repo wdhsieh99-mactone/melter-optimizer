@@ -15,10 +15,12 @@ try:
     from src.physics_model import MelterPhysicsModel, ALLOY_PROPERTIES, _CALIBRATED_CONSTANTS_PATH, GAS_LHV
     from src.optimizer import HeatingCurveOptimizer, format_hours_to_hhmm, parse_hhmm_to_hours
     from src.evaluator import MelterEvaluator
+    from src.config_manager import load_app_config, save_app_config, reset_app_config, DEFAULT_APP_CONFIG
 except ImportError:
     from physics_model import MelterPhysicsModel, ALLOY_PROPERTIES, _CALIBRATED_CONSTANTS_PATH, GAS_LHV
     from optimizer import HeatingCurveOptimizer, format_hours_to_hhmm, parse_hhmm_to_hours
     from evaluator import MelterEvaluator
+    from config_manager import load_app_config, save_app_config, reset_app_config, DEFAULT_APP_CONFIG
 
 
 def compute_sankey_balance_helper(
@@ -282,9 +284,30 @@ def build_sankey_figure(sankey_data: dict, title: str = "熔煉爐全爐熱平�
     return fig
 
 
-def get_optimizer_and_evaluator():
-    model = MelterPhysicsModel()
-    opt = HeatingCurveOptimizer(model)
+def get_optimizer_and_evaluator(cfg: dict = None):
+    if cfg is None:
+        cfg = load_app_config()
+    proc_cfg = cfg.get('process', {})
+    p_cfg = cfg.get('physics', {})
+    model = MelterPhysicsModel(
+        gas_price=proc_cfg.get('gas_price', 15.0),
+        aluminum_price=proc_cfg.get('aluminum_price', 75.0),
+        wall_loss_kw=p_cfg.get('wall_loss_kw', 250.0),
+        emissivity_eff=p_cfg.get('emissivity_eff', 0.85),
+        burnoff_k0=p_cfg.get('burnoff_k0', 0.015),
+        burnoff_ea=p_cfg.get('burnoff_ea', 45000.0),
+        hearth_area_m2=p_cfg.get('hearth_area_m2', 40.0),
+        hearth_loss_ref_kw=p_cfg.get('hearth_loss_ref_kw', 85.0),
+        dross_factor_flat=p_cfg.get('dross_factor_flat', 0.70),
+        gas_lhv=p_cfg.get('gas_lhv_kj_nm3', 37256.0),
+        regen_base_eff=p_cfg.get('regen_base_eff', 0.74),
+    )
+    opt = HeatingCurveOptimizer(
+        physics_model=model,
+        max_gas_flow_dual_pair=p_cfg.get('max_gas_flow_dual_pair', 880.0),
+        max_gas_flow_single_pair=p_cfg.get('max_gas_flow_single_pair', 440.0),
+        min_gas_flow_nm3h=p_cfg.get('min_gas_flow_nm3h', 50.0),
+    )
     evaluator = MelterEvaluator(opt)
     return model, opt, evaluator
 
@@ -312,7 +335,14 @@ def main():
     if 'is_authenticated' not in st.session_state:
         st.session_state['is_authenticated'] = False
 
-    model, optimizer, evaluator = get_optimizer_and_evaluator()
+    if 'app_config' not in st.session_state:
+        st.session_state['app_config'] = load_app_config()
+
+    cfg = st.session_state['app_config']
+    proc_cfg = cfg.get('process', {})
+    phys_cfg = cfg.get('physics', {})
+
+    model, optimizer, evaluator = get_optimizer_and_evaluator(cfg)
 
     calib_meta = load_calibration_meta()
     if calib_meta:
@@ -354,7 +384,9 @@ def main():
     st.sidebar.markdown("---")
     st.sidebar.subheader("1. 鋁種與加料條件")
     alloy_list = ['5052', '5052KS', '5083A', '5083L', '6061', '5182', '3004', '99.7']
-    selected_alloy = st.sidebar.selectbox("產出鋁種 (Alloy Type)", alloy_list, index=0)
+    def_alloy = proc_cfg.get('alloy_name', '5052')
+    def_alloy_idx = alloy_list.index(def_alloy) if def_alloy in alloy_list else 0
+    selected_alloy = st.sidebar.selectbox("產出鋁種 (Alloy Type)", alloy_list, index=def_alloy_idx)
     
     props = ALLOY_PROPERTIES.get(selected_alloy, ALLOY_PROPERTIES['DEFAULT'])
     st.sidebar.info(
@@ -365,16 +397,17 @@ def main():
     )
     
     charged_weight_tonnes = st.sidebar.number_input(
-        "本爐投料重量 (公噸) Fresh Charge", min_value=10.0, max_value=85.0, value=65.0, step=1.0,
+        "本爐投料重量 (公噸) Fresh Charge", min_value=10.0, max_value=85.0,
+        value=float(proc_cfg.get('charged_weight_tonnes', 65.0)), step=1.0,
         help="本爐新加入的冷料重量 (不含前爐殘湯)。"
     )
     charged_weight_kg = charged_weight_tonnes * 1000.0
 
     residual_weight_tonnes = st.sidebar.number_input(
-        "前爐殘湯重量 (公噸) Carry-in Residual", min_value=0.0, max_value=15.0, value=7.0, step=0.5,
+        "前爐殘湯重量 (公噸) Carry-in Residual", min_value=0.0, max_value=15.0,
+        value=float(proc_cfg.get('residual_weight_tonnes', 7.0)), step=0.5,
         help="上一爐留在爐內、尚未出清的高溫殘湯重量 — 現場經驗約 5~10 公噸。"
              "此殘湯已接近液相線溫度，會降低本爐實際所需的新增熱量，模型現已納入計算。"
-             " (Hot heel left from the previous heat; reduces this heat's new energy requirement.)"
     )
     residual_weight_kg = residual_weight_tonnes * 1000.0
 
@@ -382,37 +415,54 @@ def main():
 
     target_duration_hrs = st.sidebar.slider(
         "要求出湯時限 (小時) Required Discharge Deadline",
-        min_value=3.0, max_value=10.0, value=6.0, step=0.5,
+        min_value=3.0, max_value=10.0,
+        value=float(proc_cfg.get('target_duration_hrs', 6.0)), step=0.5,
         help="必須在此時限內達到目標湯溫並可出湯 — 這是硬性限制，最佳化只在能達成此時限的方案中挑選成本最低者。"
-             " (Hard constraint: only schedules that reach target temp by this deadline are considered.)"
     )
     target_bath_temp = st.sidebar.slider(
         "目標出液湯溫 (°C) Target Bath Temp",
-        min_value=700.0, max_value=800.0, value=780.0, step=10.0,
+        min_value=700.0, max_value=800.0,
+        value=float(proc_cfg.get('target_bath_temp_c', 780.0)), step=10.0,
         help="現場出湯目標溫度預設 780°C (可調範圍 700°C ~ 800°C，每格 10°C)。"
     )
-    max_roof_sp_limit = st.sidebar.slider("頂頭最高安全溫度天花板 (°C)", min_value=1100.0, max_value=1250.0, value=1200.0, step=10.0)
+    max_roof_sp_limit = st.sidebar.slider(
+        "頂頭最高安全溫度天花板 (°C)", min_value=1100.0, max_value=1250.0,
+        value=float(proc_cfg.get('max_roof_sp_limit', 1200.0)), step=10.0
+    )
     
     st.sidebar.subheader("2. 現場傳統操作基準設定 (3段溫控)")
     with st.sidebar.expander("🛠️ 現場傳統溫控參數 (Melt / Flat / Bath Mode)", expanded=True):
         st.markdown("**第 1 段：融化模式 (Melt Mode)**")
         col_t1_sp, col_t1_dur = st.columns([1, 1])
         with col_t1_sp:
-            base_sp1 = st.number_input("第1段目標頂溫 (°C)", min_value=900.0, max_value=1250.0, value=1180.0, step=10.0, key="base_sp1", help="加料完成關門後融化大火目標頂溫 (現場基準為 1180°C)")
+            base_sp1 = st.number_input(
+                "第1段目標頂溫 (°C)", min_value=900.0, max_value=1250.0,
+                value=float(proc_cfg.get('baseline_sp1', 1180.0)), step=10.0, key="base_sp1",
+                help="加料完成關門後融化大火目標頂溫 (現場基準為 1180°C)"
+            )
         with col_t1_dur:
-            base_dur1_str = st.text_input("第1段持續時間 (hh:mm)", value=format_hours_to_hhmm(target_duration_hrs), key="base_dur1", help="現場傳統基準操作：加料關門後 1180°C 大火持續到底 (預設全爐時限)")
+            def_dur1_str = str(proc_cfg.get('baseline_dur1_hhmm', format_hours_to_hhmm(target_duration_hrs)))
+            base_dur1_str = st.text_input("第1段持續時間 (hh:mm)", value=def_dur1_str, key="base_dur1", help="現場傳統基準操作：加料關門後 1180°C 大火持續到底")
 
         st.markdown("**第 2 段：平湯/過渡段 (Flat Bath Mode)**")
         col_t2_sp, col_t2_dur = st.columns([1, 1])
         with col_t2_sp:
-            base_sp2 = st.number_input("第2段目標頂溫 (°C)", min_value=800.0, max_value=1150.0, value=950.0, step=10.0, key="base_sp2")
+            base_sp2 = st.number_input(
+                "第2段目標頂溫 (°C)", min_value=800.0, max_value=1150.0,
+                value=float(proc_cfg.get('baseline_sp2', 950.0)), step=10.0, key="base_sp2"
+            )
         with col_t2_dur:
-            base_dur2_str = st.text_input("第2段持續時間 (hh:mm)", value="00:00", key="base_dur2", help="若現場無過渡段直接切換湯溫，持續時間設為 00:00")
+            def_dur2_str = str(proc_cfg.get('baseline_dur2_hhmm', '00:00'))
+            base_dur2_str = st.text_input("第2段持續時間 (hh:mm)", value=def_dur2_str, key="base_dur2", help="若現場無過渡段直接切換湯溫，持續時間設為 00:00")
 
         st.markdown("**第 3 段：湯溫/保溫模式 (Bath Mode)**")
         col_t3_sp, col_t3_dur = st.columns([1, 1])
         with col_t3_sp:
-            base_sp3 = st.number_input("第3段保溫設點 (°C)", min_value=700.0, max_value=900.0, value=780.0, step=10.0, key="base_sp3", help="改用湯溫控制模式後之保溫設點 (預設 780°C)")
+            base_sp3 = st.number_input(
+                "第3段保溫設點 (°C)", min_value=700.0, max_value=900.0,
+                value=float(proc_cfg.get('baseline_sp3', 780.0)), step=10.0, key="base_sp3",
+                help="改用湯溫控制模式後之保溫設點 (預設 780°C)"
+            )
         with col_t3_dur:
             dur1_hrs = parse_hhmm_to_hours(base_dur1_str, default=target_duration_hrs)
             dur2_hrs = parse_hhmm_to_hours(base_dur2_str, default=0.0)
@@ -423,7 +473,10 @@ def main():
     baseline_switch_hrs = dur1_hrs
 
     st.sidebar.subheader("3. 空氣燃氣比與殘氧設定")
-    excess_air_pct = st.sidebar.slider("基準過剩空氣率 Excess Air (%)", min_value=5.0, max_value=30.0, value=25.0, step=1.0)
+    excess_air_pct = st.sidebar.slider(
+        "基準過剩空氣率 Excess Air (%)", min_value=5.0, max_value=30.0,
+        value=float(proc_cfg.get('excess_air_pct', 25.0)), step=1.0
+    )
     
     if hasattr(model, 'calculate_flue_oxygen_pct'):
         est_o2 = model.calculate_flue_oxygen_pct(excess_air_pct)
@@ -433,8 +486,14 @@ def main():
     st.sidebar.caption(f"預估煙道殘氧量 (AT104): **{est_o2:.2f}% O₂**")
     
     st.sidebar.subheader("4. 能源與金屬價格")
-    gas_price = st.sidebar.number_input("天然氣單價 (TWD / Nm³)", min_value=5.0, max_value=50.0, value=15.0, step=1.0)
-    aluminum_price = st.sidebar.number_input("鋁錠/金屬單價 (TWD / kg)", min_value=30.0, max_value=150.0, value=75.0, step=5.0)
+    gas_price = st.sidebar.number_input(
+        "天然氣單價 (TWD / Nm³)", min_value=5.0, max_value=50.0,
+        value=float(proc_cfg.get('gas_price', 15.0)), step=1.0
+    )
+    aluminum_price = st.sidebar.number_input(
+        "鋁錠/金屬單價 (TWD / kg)", min_value=30.0, max_value=150.0,
+        value=float(proc_cfg.get('aluminum_price', 75.0)), step=5.0
+    )
     
     model.gas_price = gas_price
     model.aluminum_price = aluminum_price
@@ -444,7 +503,9 @@ def main():
     
     # Main Tabs
     tab_title_bt = "📊 歷史爐次回測分析 (✅ 已解鎖)" if st.session_state.get('is_authenticated', False) else "📊 歷史爐次回測分析 (🔒 需授權)"
-    tab_single, tab_backtest, tab_manual = st.tabs(["🚀 即時單爐最佳化模擬", tab_title_bt, "📖 4燒嘴蓄熱系統手冊"])
+    tab_single, tab_backtest, tab_manual, tab_settings = st.tabs([
+        "🚀 即時單爐最佳化模擬", tab_title_bt, "📖 4燒嘴蓄熱系統手冊", "⚙️ 系統預設與物理模型參數設定"
+    ])
     
     with tab_single:
         col_hdr, col_btn = st.columns([3, 1])
@@ -1033,6 +1094,112 @@ def main():
             "因此模型的空燃比僅作為最佳化搜尋變數，未直接以真實歷史空燃比校正。"
             " (Real O2/excess-air trajectory could not be validated against this dataset — see MELTER_KNOWLEDGE.md / PLAN.md.)"
         )
+
+    with tab_settings:
+        st.markdown("### ⚙️ 系統預設值與熱力學模型內部假設參數管理")
+        st.info(
+            "💡 **參數儲存說明**：在此設定的各項參數，點擊下方【💾 儲存並設為系統預設值】按鈕後，"
+            "會直接儲存至主機端設定檔 (`config/furnace_parameters.json`)。"
+            "未來每次重新開啟 App 或重新整理網頁時，將自動以此組參數作為初值 (Initial Load) 與物理模擬基準。"
+        )
+
+        with st.form("settings_form"):
+            col_act1, col_act2 = st.columns([1, 1])
+            with col_act1:
+                btn_save_form = st.form_submit_button("💾 儲存並設為系統預設值 (Save as Defaults)", type="primary", use_container_width=True)
+            with col_act2:
+                btn_reset_form = st.form_submit_button("🔄 恢復出廠工程基準值 (Reset to Defaults)", use_container_width=True)
+
+            col_s1, col_s2 = st.columns(2)
+            
+            with col_s1:
+                st.markdown("#### 📋 1. 操作工藝與爐次條件預設值 (Process Defaults)")
+                s_alloy_idx = alloy_list.index(proc_cfg.get('alloy_name', '5052')) if proc_cfg.get('alloy_name', '5052') in alloy_list else 0
+                s_alloy = st.selectbox("預設產出鋁種", alloy_list, index=s_alloy_idx, key="s_alloy")
+                s_charged = st.number_input("預設投料量 (公噸)", min_value=10.0, max_value=85.0, value=float(proc_cfg.get('charged_weight_tonnes', 65.0)), step=1.0, key="s_charged")
+                s_residual = st.number_input("預設殘湯量 (公噸)", min_value=0.0, max_value=15.0, value=float(proc_cfg.get('residual_weight_tonnes', 7.0)), step=0.5, key="s_residual")
+                s_duration = st.number_input("預設出湯時限 (小時)", min_value=3.0, max_value=10.0, value=float(proc_cfg.get('target_duration_hrs', 6.0)), step=0.5, key="s_duration")
+                s_target_temp = st.number_input("預設出湯目標湯溫 (°C)", min_value=700.0, max_value=800.0, value=float(proc_cfg.get('target_bath_temp_c', 780.0)), step=10.0, key="s_target_temp")
+                s_roof_limit = st.number_input("預設頂溫上限限制 (°C)", min_value=1050.0, max_value=1250.0, value=float(proc_cfg.get('max_roof_sp_limit', 1200.0)), step=10.0, key="s_roof_limit")
+                
+                st.markdown("##### 現場傳統基準設定")
+                s_base_sp1 = st.number_input("傳統第1段目標頂溫 (°C)", min_value=900.0, max_value=1250.0, value=float(proc_cfg.get('baseline_sp1', 1180.0)), step=10.0, key="s_base_sp1")
+                s_base_dur1 = st.text_input("傳統第1段持續時間 (hh:mm)", value=str(proc_cfg.get('baseline_dur1_hhmm', '06:00')), key="s_base_dur1")
+                s_base_sp2 = st.number_input("傳統第2段目標頂溫 (°C)", min_value=800.0, max_value=1150.0, value=float(proc_cfg.get('baseline_sp2', 950.0)), step=10.0, key="s_base_sp2")
+                s_base_dur2 = st.text_input("傳統第2段持續時間 (hh:mm)", value=str(proc_cfg.get('baseline_dur2_hhmm', '00:00')), key="s_base_dur2")
+                s_base_sp3 = st.number_input("傳統第3段保溫設點 (°C)", min_value=700.0, max_value=900.0, value=float(proc_cfg.get('baseline_sp3', 780.0)), step=10.0, key="s_base_sp3")
+
+                st.markdown("##### 燃燒與成本參數")
+                s_excess_air = st.number_input("基準過剩空氣率 (%)", min_value=5.0, max_value=30.0, value=float(proc_cfg.get('excess_air_pct', 25.0)), step=1.0, key="s_excess_air")
+                s_gas_price = st.number_input("天然氣單價 (TWD/Nm³)", min_value=5.0, max_value=50.0, value=float(proc_cfg.get('gas_price', 15.0)), step=1.0, key="s_gas_price")
+                s_al_price = st.number_input("鋁錠/金屬單價 (TWD/kg)", min_value=30.0, max_value=150.0, value=float(proc_cfg.get('aluminum_price', 75.0)), step=5.0, key="s_al_price")
+
+            with col_s2:
+                st.markdown("#### 🔬 2. 熱力學與爐體內部物理假設常數 (Physics Assumptions)")
+                s_hearth_area = st.number_input("爐膛熔池表面積 (m²)", min_value=10.0, max_value=100.0, value=float(phys_cfg.get('hearth_area_m2', 66.15)), step=1.0, key="s_hearth_area", help="Mechatherm 80T 反射爐熔池平面面積 (手冊設計值 66.15 m²)")
+                s_wall_loss = st.number_input("爐體爐壁散熱損失 (kW)", min_value=50.0, max_value=600.0, value=float(phys_cfg.get('wall_loss_kw', 250.0)), step=10.0, key="s_wall_loss", help="耐火磚與爐體外殼穩態散熱 (預設 250.0 kW)")
+                s_hearth_loss_ref = st.number_input("爐底耐火材導熱散熱基準 (kW @ 780°C)", min_value=10.0, max_value=300.0, value=float(phys_cfg.get('hearth_loss_ref_kw', 85.0)), step=5.0, key="s_hearth_loss_ref", help="熔池向爐底導熱累積熱損 (預設 85.0 kW)")
+                s_dross_factor = st.number_input("平湯氧化浮渣層傳熱阻抗因子", min_value=0.30, max_value=1.00, value=float(phys_cfg.get('dross_factor_flat', 0.70)), step=0.05, key="s_dross_factor", help="全融平湯後表面 10-30mm 浮渣層之傳熱阻抗比率 (預設 0.70)")
+                s_emissivity = st.number_input("耐火材綜合發射率/黑度 (Emissivity)", min_value=0.20, max_value=1.00, value=float(phys_cfg.get('emissivity_eff', 0.85)), step=0.05, key="s_emissivity", help="爐頂高鋁磚與耐火澆注料高溫發射率")
+                s_gas_lhv = st.number_input("天然氣低位發熱量 LHV (kJ/Nm³)", min_value=25000.0, max_value=45000.0, value=float(phys_cfg.get('gas_lhv_kj_nm3', 37256.0)), step=100.0, key="s_gas_lhv")
+                
+                st.markdown("##### 燒嘴燃氣流量極限")
+                s_max_dual = st.number_input("雙對燒嘴全火最大流量 (Nm³/h)", min_value=400.0, max_value=1500.0, value=float(phys_cfg.get('max_gas_flow_dual_pair', 880.0)), step=20.0, key="s_max_dual", help="兩對交替大火之全開流量上限 (預設 880 Nm³/h)")
+                s_max_single = st.number_input("單對燒嘴微火最大流量 (Nm³/h)", min_value=200.0, max_value=800.0, value=float(phys_cfg.get('max_gas_flow_single_pair', 440.0)), step=10.0, key="s_max_single", help="單對微火/保溫火流量上限 (預設 440 Nm³/h)")
+                s_min_gas = st.number_input("燃氣最小保溫維持流量 (Nm³/h)", min_value=10.0, max_value=150.0, value=float(phys_cfg.get('min_gas_flow_nm3h', 50.0)), step=5.0, key="s_min_gas", help="維持點火安全與正壓之最小燃氣流量 (預設 50 Nm³/h)")
+
+                st.markdown("##### 氧化反應與蓄熱效率")
+                s_burnoff_ea = st.number_input("氧化活化能 Activation Energy (J/mol)", min_value=10000.0, max_value=100000.0, value=float(phys_cfg.get('burnoff_ea', 45000.0)), step=1000.0, key="s_burnoff_ea")
+                s_burnoff_k0 = st.number_input("氧化速率指前係數 (k0)", min_value=0.001, max_value=1.0, value=float(phys_cfg.get('burnoff_k0', 0.015)), step=0.005, format="%.4f", key="s_burnoff_k0")
+                s_regen_eff = st.number_input("蓄熱陶瓷床基準回收效率", min_value=0.40, max_value=0.90, value=float(phys_cfg.get('regen_base_eff', 0.74)), step=0.02, key="s_regen_eff", help="陶瓷球蓄熱體煙氣餘熱回收效率 (預設 0.74)")
+
+        if btn_save_form:
+            updated_cfg = {
+                "process": {
+                    "alloy_name": s_alloy,
+                    "charged_weight_tonnes": float(s_charged),
+                    "residual_weight_tonnes": float(s_residual),
+                    "target_duration_hrs": float(s_duration),
+                    "target_bath_temp_c": float(s_target_temp),
+                    "max_roof_sp_limit": float(s_roof_limit),
+                    "excess_air_pct": float(s_excess_air),
+                    "gas_price": float(s_gas_price),
+                    "aluminum_price": float(s_al_price),
+                    "baseline_sp1": float(s_base_sp1),
+                    "baseline_dur1_hhmm": str(s_base_dur1),
+                    "baseline_sp2": float(s_base_sp2),
+                    "baseline_dur2_hhmm": str(s_base_dur2),
+                    "baseline_sp3": float(s_base_sp3),
+                },
+                "physics": {
+                    "hearth_area_m2": float(s_hearth_area),
+                    "wall_loss_kw": float(s_wall_loss),
+                    "hearth_loss_ref_kw": float(s_hearth_loss_ref),
+                    "dross_factor_flat": float(s_dross_factor),
+                    "emissivity_eff": float(s_emissivity),
+                    "gas_lhv_kj_nm3": float(s_gas_lhv),
+                    "max_gas_flow_dual_pair": float(s_max_dual),
+                    "max_gas_flow_single_pair": float(s_max_single),
+                    "min_gas_flow_nm3h": float(s_min_gas),
+                    "burnoff_ea": float(s_burnoff_ea),
+                    "burnoff_k0": float(s_burnoff_k0),
+                    "regen_base_eff": float(s_regen_eff),
+                }
+            }
+            save_app_config(updated_cfg)
+            st.session_state['app_config'] = updated_cfg
+            if 'opt_result' in st.session_state:
+                del st.session_state['opt_result']
+            st.success("✅ 設定已成功永久儲存至主機端 (`config/furnace_parameters.json`)！未來啟動或重新整理將自動載入此組設定進行計算。")
+            st.rerun()
+
+        if btn_reset_form:
+            reset_cfg = reset_app_config()
+            st.session_state['app_config'] = reset_cfg
+            if 'opt_result' in st.session_state:
+                del st.session_state['opt_result']
+            st.info("🔄 已成功恢復為原廠出廠預設工程常數！")
+            st.rerun()
 
 
 if __name__ == '__main__':

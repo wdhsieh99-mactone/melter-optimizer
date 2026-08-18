@@ -105,6 +105,11 @@ class MelterPhysicsModel:
         burnoff_k0: Optional[float] = None,   # rate-scale, fitted against real per-heat yield loss
         burnoff_ea: Optional[float] = None,   # Activation energy (J/mol)
         efficiency_scale: Optional[float] = None,  # fitted multiplier on combustion_efficiency()
+        hearth_area_m2: Optional[float] = None,
+        hearth_loss_ref_kw: Optional[float] = None,
+        dross_factor_flat: Optional[float] = None,
+        gas_lhv: Optional[float] = None,
+        regen_base_eff: Optional[float] = None,
     ):
         # Any constant left as None picks up the value fitted by src/calibration.py against
         # real production data (if calibration has been run), else the hardcoded fallback here.
@@ -116,6 +121,12 @@ class MelterPhysicsModel:
         self.burnoff_k0 = burnoff_k0 if burnoff_k0 is not None else calibrated.get('burnoff_k0', 0.45)
         self.burnoff_ea = burnoff_ea if burnoff_ea is not None else calibrated.get('burnoff_ea', 45000.0)
         self.efficiency_scale = efficiency_scale if efficiency_scale is not None else calibrated.get('efficiency_scale', 1.0)
+        self.HEARTH_AREA_M2 = hearth_area_m2 if hearth_area_m2 is not None else calibrated.get('hearth_area_m2', HEARTH_AREA_M2)
+        self.hearth_loss_ref_kw = hearth_loss_ref_kw if hearth_loss_ref_kw is not None else 85.0
+        self.dross_factor_flat = dross_factor_flat if dross_factor_flat is not None else 0.70
+        if gas_lhv is not None:
+            self.GAS_LHV = gas_lhv
+        self.regen_base_eff = regen_base_eff if regen_base_eff is not None else 0.74
 
     def calculate_theoretical_energy(
         self,
@@ -175,14 +186,14 @@ class MelterPhysicsModel:
         """
         t_roof_k = roof_temp_c + 273.15
         t_bath_k = bath_temp_c + 273.15
-        dross_factor = 0.70 if is_flat_bath else 1.0
+        dross_factor = self.dross_factor_flat if is_flat_bath else 1.0
         return STEFAN_BOLTZMANN * self.emissivity_eff * self.HEARTH_AREA_M2 * (t_roof_k**4 - t_bath_k**4) * dross_factor
 
     def bath_bottom_loss_kw(self, bath_temp_c: float) -> float:
         """Heat conduction loss from molten bath to furnace hearth bottom refractory & ambient (kW)."""
         if bath_temp_c <= 100.0:
             return 0.0
-        return 85.0 * max(0.0, bath_temp_c - 25.0) / (780.0 - 25.0)
+        return self.hearth_loss_ref_kw * max(0.0, bath_temp_c - 25.0) / (780.0 - 25.0)
 
     def dross_burnoff_rate_kg_hr(
         self,
@@ -269,7 +280,7 @@ class MelterPhysicsModel:
         # 3. Flue Gas Enthalpy Balance & Regenerator Recovery
         net_heat_to_flue_gj = max(1.0, (q_fuel_gj + q_ox_gj) - (q_al_absorbed_gj + q_dross_sensible_gj + q_wall_hearth_gj))
         
-        regen_eff = 0.74 - (excess_air_pct - 15.0) * 0.003
+        regen_eff = self.regen_base_eff - (excess_air_pct - 15.0) * 0.003
         regen_eff = max(0.60, min(0.78, regen_eff))
         
         q_roof_exhaust_gj = net_heat_to_flue_gj * 0.10

@@ -51,8 +51,17 @@ def parse_hhmm_to_hours(val, default: float = 0.0) -> float:
 class HeatingCurveOptimizer:
     """Simulates and optimizes heating curves for aluminum melting furnaces."""
 
-    def __init__(self, physics_model: Optional[MelterPhysicsModel] = None):
+    def __init__(
+        self,
+        physics_model: Optional[MelterPhysicsModel] = None,
+        max_gas_flow_dual_pair: float = MAX_GAS_FLOW_DUAL_PAIR,
+        max_gas_flow_single_pair: float = MAX_GAS_FLOW_SINGLE_PAIR,
+        min_gas_flow_nm3h: float = 50.0,
+    ):
         self.model = physics_model if physics_model is not None else MelterPhysicsModel()
+        self.max_gas_flow_dual_pair = max_gas_flow_dual_pair
+        self.max_gas_flow_single_pair = max_gas_flow_single_pair
+        self.min_gas_flow_nm3h = min_gas_flow_nm3h
 
     def simulate_trajectory(
         self,
@@ -141,17 +150,17 @@ class HeatingCurveOptimizer:
                 sp_roof = sp_roof_melt
                 phase = '第1段: 主熔化段 (Melt)'
                 burner_mode = 'Dual Pair (交替全火)'
-                max_gas_limit = MAX_GAS_FLOW_DUAL_PAIR
+                max_gas_limit = self.max_gas_flow_dual_pair
             elif t_soak_end_hrs is not None and sp_roof_soak is not None and t_hr < t_soak_end_hrs:
                 sp_roof = sp_roof_soak
                 phase = '第2段: 平湯昇溫段 (Flat Bath)'
                 burner_mode = 'Dual Pair (交替中火)'
-                max_gas_limit = MAX_GAS_FLOW_DUAL_PAIR
+                max_gas_limit = self.max_gas_flow_dual_pair
             else:
                 sp_roof = sp_roof_hold
                 phase = '第3段: 出湯保溫段 (Hold & Tap)' if (t_soak_end_hrs is not None and sp_roof_soak is not None) else '第2段: 出湯保溫段 (Hold & Tap)'
                 burner_mode = 'Single Pair (交替微火)'
-                max_gas_limit = MAX_GAS_FLOW_SINGLE_PAIR
+                max_gas_limit = self.max_gas_flow_single_pair
 
             sp_roofs.append(sp_roof)
             burner_modes.append(burner_mode)
@@ -181,7 +190,7 @@ class HeatingCurveOptimizer:
                 # Molten bath is at or above target tap temperature -> throttle burners to holding
                 q_hold_needed_kw = self.model.wall_loss_kw + q_hearth_loss_kw
                 gas_flow_unclamp = (q_hold_needed_kw * 3600.0) / self.model.GAS_LHV if self.model.GAS_LHV > 0 else 0.0
-                gas_flow_nm3h = max(50.0, min(MAX_GAS_FLOW_SINGLE_PAIR, gas_flow_unclamp))
+                gas_flow_nm3h = max(self.min_gas_flow_nm3h, min(self.max_gas_flow_single_pair, gas_flow_unclamp))
                 q_combustion_actual_kw = (gas_flow_nm3h * self.model.GAS_LHV) / 3600.0 if self.model.GAS_LHV > 0 else 0.0
                 # Bath temperature is gently clamped to maintain target
                 q_bath_actual_kw = max(-30.0, min(30.0, (q_combustion_actual_kw - self.model.wall_loss_kw) * eff - q_hearth_loss_kw))
@@ -197,7 +206,7 @@ class HeatingCurveOptimizer:
                 # Bath is hotter than roof/loss -> cool down
                 q_combustion_needed_kw = self.model.wall_loss_kw
                 gas_flow_unclamp = (q_combustion_needed_kw * 3600.0) / self.model.GAS_LHV if self.model.GAS_LHV > 0 else 0.0
-                gas_flow_nm3h = min(max_gas_limit, max(50.0, gas_flow_unclamp))
+                gas_flow_nm3h = min(max_gas_limit, max(self.min_gas_flow_nm3h, gas_flow_unclamp))
                 q_bath_actual_kw = q_net_to_bath_kw
 
             q_step_kj = q_bath_actual_kw * (dt_mins * 60.0)

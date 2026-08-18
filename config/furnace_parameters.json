@@ -1,0 +1,32 @@
+{
+    "process": {
+        "alloy_name": "5052",
+        "charged_weight_tonnes": 65.0,
+        "residual_weight_tonnes": 0.0,
+        "target_duration_hrs": 6.0,
+        "target_bath_temp_c": 780.0,
+        "max_roof_sp_limit": 1180.0,
+        "excess_air_pct": 25.0,
+        "gas_price": 15.0,
+        "aluminum_price": 75.0,
+        "baseline_sp1": 1180.0,
+        "baseline_dur1_hhmm": "06:00",
+        "baseline_sp2": 1050.0,
+        "baseline_dur2_hhmm": "00:00",
+        "baseline_sp3": 780.0
+    },
+    "physics": {
+        "hearth_area_m2": 66.15,
+        "wall_loss_kw": 250.0,
+        "hearth_loss_ref_kw": 85.0,
+        "dross_factor_flat": 0.7,
+        "emissivity_eff": 0.85,
+        "gas_lhv_kj_nm3": 37256.0,
+        "max_gas_flow_dual_pair": 880.0,
+        "max_gas_flow_single_pair": 440.0,
+        "min_gas_flow_nm3h": 50.0,
+        "burnoff_ea": 45000.0,
+        "burnoff_k0": 0.015,
+        "regen_base_eff": 0.74
+    }
+}
