@@ -92,6 +92,100 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+def build_sankey_figure(sankey_data: dict, title: str = "熔煉爐全爐熱平衡能流圖 (Sankey Diagram)"):
+    """Constructs an interactive Plotly Sankey diagram representing full furnace heat balance."""
+    labels = [
+        "1. 燃料燃燒熱 (Fuel Combustion)",       # 0
+        "2. 鋁/鎂氧化反應熱 (Dross Oxidation)",   # 1
+        "3. 預熱助燃空氣 (Preheated Air)",       # 2
+        "4. 爐膛熱交換中心 (Furnace Chamber)",     # 3
+        "5. 鋁金屬熔解有效吸熱 (Molten Al)",       # 4
+        "6. 鋁渣升溫顯熱 (Dross Sensible)",       # 5
+        "7. 爐壁與爐底散熱 (Wall & Hearth)",      # 6
+        "8. 爐頂/爐門逸散煙氣 (Roof Leak)",       # 7
+        "9. 進入蓄熱床煙氣 (Flue to Beds)",      # 8
+        "10. 煙囪排煙損失 (Final Stack Loss)",    # 9
+    ]
+    
+    node_colors = [
+        "#1E88E5",  # Fuel - Blue
+        "#FB8C00",  # Dross Ox - Orange
+        "#00ACC1",  # Preheat Air - Cyan
+        "#5E35B1",  # Chamber - Deep Purple
+        "#43A047",  # Molten Al - Emerald Green
+        "#FFA726",  # Dross Sensible - Light Orange
+        "#8D6E63",  # Wall/Hearth - Brown
+        "#E53935",  # Roof Leak - Red
+        "#7E57C2",  # Flue to Beds - Purple
+        "#78909C",  # Stack Loss - Grey Blue
+    ]
+    
+    q_fuel = max(0.01, sankey_data['q_fuel_gj'])
+    q_ox = max(0.01, sankey_data['q_ox_gj'])
+    q_air_preheat = max(0.01, sankey_data['q_air_preheat_gj'])
+    q_al = max(0.01, sankey_data['q_al_absorbed_gj'])
+    q_dross_sens = max(0.01, sankey_data['q_dross_sensible_gj'])
+    q_wall = max(0.01, sankey_data['q_wall_hearth_gj'])
+    q_roof_leak = max(0.01, sankey_data['q_roof_exhaust_gj'])
+    q_bed_flue = max(0.01, sankey_data['q_bed_flue_in_gj'])
+    q_stack = max(0.01, sankey_data['q_stack_loss_gj'])
+    
+    sources = [0, 1, 2, 3, 3, 3, 3, 3, 8, 8]
+    targets = [3, 3, 3, 4, 5, 6, 7, 8, 2, 9]
+    values = [
+        q_fuel, q_ox, q_air_preheat,
+        q_al, q_dross_sens, q_wall, q_roof_leak, q_bed_flue,
+        q_air_preheat, q_stack
+    ]
+    
+    link_colors = [
+        "rgba(30, 136, 229, 0.45)",   # Fuel
+        "rgba(251, 140, 0, 0.45)",   # Ox
+        "rgba(0, 172, 193, 0.45)",   # Preheat
+        "rgba(67, 160, 71, 0.55)",    # Al
+        "rgba(255, 167, 38, 0.45)",  # Dross
+        "rgba(141, 110, 99, 0.45)",  # Wall
+        "rgba(229, 57, 53, 0.45)",   # Roof leak
+        "rgba(126, 87, 194, 0.45)",  # Flue bed
+        "rgba(0, 172, 193, 0.50)",   # Recycle
+        "rgba(120, 144, 156, 0.45)", # Stack
+    ]
+    
+    custom_nodes = [
+        f"{q_fuel:.2f} GJ", f"{q_ox:.2f} GJ", f"{q_air_preheat:.2f} GJ",
+        f"{q_fuel + q_ox + q_air_preheat:.2f} GJ",
+        f"{q_al:.2f} GJ", f"{q_dross_sens:.2f} GJ", f"{q_wall:.2f} GJ",
+        f"{q_roof_leak:.2f} GJ", f"{q_bed_flue:.2f} GJ", f"{q_stack:.2f} GJ"
+    ]
+    
+    fig = go.Figure(data=[go.Sankey(
+        node=dict(
+            pad=18,
+            thickness=22,
+            line=dict(color="#37474F", width=0.8),
+            label=labels,
+            color=node_colors,
+            customdata=custom_nodes,
+            hovertemplate='%{label}<br>熱能總量: <b>%{customdata}</b><extra></extra>'
+        ),
+        link=dict(
+            source=sources,
+            target=targets,
+            value=values,
+            color=link_colors,
+            hovertemplate='%{source.label} → %{target.label}<br>能流熱量: <b>%{value:.2f} GJ</b> (%{value/3.6:.2f} MWh)<extra></extra>'
+        )
+    )])
+    
+    fig.update_layout(
+        title_text=title,
+        font=dict(size=13, family="sans-serif"),
+        height=540,
+        margin=dict(l=15, r=15, t=50, b=20)
+    )
+    return fig
+
+
 def get_optimizer_and_evaluator():
     model = MelterPhysicsModel()
     opt = HeatingCurveOptimizer(model)
@@ -624,7 +718,7 @@ def main():
         st.plotly_chart(fig2, use_container_width=True)
 
         st.subheader("3. 鋁種燒損與成本結構對比 (Cost Breakdown)")
-        categories = ['傳統固定 1100°C 模式', '最佳化 Heating Curve']
+        categories = ['現場傳統 1180°C 全火模式', '最佳化 3 段階梯模式']
         gas_costs = [base_sum['gas_cost'], opt_sum['gas_cost']]
         dross_costs = [base_sum['dross_cost'], opt_sum['dross_cost']]
 
@@ -635,6 +729,110 @@ def main():
         fig3.update_layout(barmode='stack', title=f"[{selected_alloy}] 每爐綜合生產成本對比 (TWD)")
         finalize_chart_layout(fig3, height=480)
         st.plotly_chart(fig3, use_container_width=True)
+
+        st.markdown("---")
+        st.subheader("4. 全爐熱平衡能流桑基圖 (Thermal Energy Sankey Diagram)")
+        st.caption("展示燃料燃燒熱、鋁渣氧化反應熱、預熱助燃空氣循環熱輸入，以及鋁金屬熔解有效吸熱、鋁渣顯熱、爐壁爐底散熱與排煙損失之完整能流分佈。")
+        
+        sankey_mode = st.radio(
+            "選擇能流情境：",
+            ["🚀 最佳化 3 段階梯溫控模式 (Optimal)", "🏛️ 現場傳統 1180°C 全火模式 (Baseline)"],
+            horizontal=True,
+            key="sankey_mode_radio"
+        )
+        
+        s_data = res.get('sankey_optimal') if '最佳化' in sankey_mode else res.get('sankey_baseline')
+        if s_data is None:
+            s_data = model.calculate_sankey_energy_balance(
+                cum_gas_nm3=opt_sum['cum_gas_nm3'] if '最佳化' in sankey_mode else base_sum['cum_gas_nm3'],
+                cum_dross_kg=opt_sum['cum_dross_kg'] if '最佳化' in sankey_mode else base_sum['cum_dross_kg'],
+                charged_weight_kg=charged_weight_kg,
+                residual_weight_kg=residual_weight_kg,
+                duration_hrs=target_duration_hrs,
+                final_bath_temp_c=opt_sum['final_bath_temp_c'] if '最佳化' in sankey_mode else base_sum['final_bath_temp_c'],
+                alloy_name=selected_alloy,
+                excess_air_pct=opt_params['excess_air_pct'] if '最佳化' in sankey_mode else excess_air_pct,
+            )
+
+        sk_col1, sk_col2, sk_col3, sk_col4 = st.columns(4)
+        with sk_col1:
+            st.metric(
+                label="熱能有效利用率 (Thermal Eff.)",
+                value=f"{s_data['thermal_eff_fuel_pct']:.1f} %",
+                help="鋁金屬熔解與升溫吸收熱 / 天然氣燃燒總熱量 (Higher is better)"
+            )
+        with sk_col2:
+            st.metric(
+                label="蓄熱床餘熱回收率 (Regen Recovery)",
+                value=f"{s_data['regen_recovery_pct']:.1f} %",
+                help="蓄熱陶瓷體預熱助燃空氣熱量 / 進入蓄熱箱煙氣總熱量"
+            )
+        with sk_col3:
+            st.metric(
+                label="全爐排煙熱損率 (Flue Loss)",
+                value=f"{s_data['total_flue_loss_pct']:.1f} %",
+                help="(爐頂門縫逸散煙氣 + 煙囪最終排煙) / 總一次熱輸入"
+            )
+        with sk_col4:
+            st.metric(
+                label="鋁/鎂氧化放熱佔比 (Oxidation Heat)",
+                value=f"{s_data['q_ox_gj'] / (s_data['q_fuel_gj'] + s_data['q_ox_gj']) * 100:.1f} %",
+                help="鋁/鎂金屬氧化劇烈放熱量佔一次總輸入之比例"
+            )
+
+        sankey_title = f"[{selected_alloy}] {sankey_mode} 全爐熱能流動平衡桑基圖 (單位: GJ)"
+        fig_sankey = build_sankey_figure(s_data, title=sankey_title)
+        st.plotly_chart(fig_sankey, use_container_width=True)
+
+        with st.expander("📋 點此展開「熱輸入 vs. 熱輸出」數值明細表 (Heat Balance Breakdown Table)", expanded=False):
+            df_sk_breakdown = pd.DataFrame({
+                "熱能項目 (Energy Stream)": [
+                    "🔹 1. 天然氣燃料燃燒熱 (Fuel Combustion Enthalpy)",
+                    "🔹 2. 鋁/鎂金屬氧化放熱 (Dross Oxidation Heat)",
+                    "🔹 3. 蓄熱床預熱助燃空氣熱 (Preheated Combustion Air)",
+                    "🔥 【爐膛總熱輸入 (Total Chamber Input)】",
+                    "--------------------------------------------------",
+                    "🔸 4. 鋁金屬熔解與升溫有效吸收熱 (Molten Aluminum Sensible + Latent)",
+                    "🔸 5. 鋁渣升溫吸收顯熱 (Dross Sensible Heat)",
+                    "🔸 6. 爐壁散熱與爐底耐火材導熱損 (Wall & Hearth Losses)",
+                    "🔸 7. 爐頂/爐門逸散未回收煙氣熱 (Roof & Door Leakage Exhaust)",
+                    "🔸 8. 進入蓄熱箱高溫煙氣熱 (Flue Gas to Regenerator Beds)",
+                    "    └ 8a. 蓄熱床預熱空氣回收 (Recycled to Preheated Air)",
+                    "    └ 8b. 煙囪最終低溫排煙熱損 (Final Stack Loss to Chimney)",
+                    "🔥 【爐膛總熱輸出 (Total Chamber Output)】"
+                ],
+                "熱量 (GJ)": [
+                    f"{s_data['q_fuel_gj']:.2f} GJ",
+                    f"{s_data['q_ox_gj']:.2f} GJ",
+                    f"{s_data['q_air_preheat_gj']:.2f} GJ",
+                    f"{s_data['total_chamber_input_gj']:.2f} GJ",
+                    "--------------------",
+                    f"{s_data['q_al_absorbed_gj']:.2f} GJ",
+                    f"{s_data['q_dross_sensible_gj']:.2f} GJ",
+                    f"{s_data['q_wall_hearth_gj']:.2f} GJ",
+                    f"{s_data['q_roof_exhaust_gj']:.2f} GJ",
+                    f"{s_data['q_bed_flue_in_gj']:.2f} GJ",
+                    f"{s_data['q_air_preheat_gj']:.2f} GJ",
+                    f"{s_data['q_stack_loss_gj']:.2f} GJ",
+                    f"{s_data['total_chamber_output_gj']:.2f} GJ",
+                ],
+                "佔總熱輸入比例 (%)": [
+                    f"{s_data['q_fuel_gj']/s_data['total_chamber_input_gj']*100:.1f} %",
+                    f"{s_data['q_ox_gj']/s_data['total_chamber_input_gj']*100:.1f} %",
+                    f"{s_data['q_air_preheat_gj']/s_data['total_chamber_input_gj']*100:.1f} %",
+                    "100.0 %",
+                    "--------------------",
+                    f"{s_data['q_al_absorbed_gj']/s_data['total_chamber_output_gj']*100:.1f} %",
+                    f"{s_data['q_dross_sensible_gj']/s_data['total_chamber_output_gj']*100:.1f} %",
+                    f"{s_data['q_wall_hearth_gj']/s_data['total_chamber_output_gj']*100:.1f} %",
+                    f"{s_data['q_roof_exhaust_gj']/s_data['total_chamber_output_gj']*100:.1f} %",
+                    f"{s_data['q_bed_flue_in_gj']/s_data['total_chamber_output_gj']*100:.1f} %",
+                    f"({s_data['q_air_preheat_gj']/s_data['total_chamber_output_gj']*100:.1f} %)",
+                    f"({s_data['q_stack_loss_gj']/s_data['total_chamber_output_gj']*100:.1f} %)",
+                    "100.0 %",
+                ]
+            })
+            st.dataframe(df_sk_breakdown, use_container_width=True, hide_index=True)
 
     with tab_backtest:
         if not st.session_state.get('is_authenticated', False):

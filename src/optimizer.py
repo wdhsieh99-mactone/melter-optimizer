@@ -398,6 +398,30 @@ class HeatingCurveOptimizer:
             baseline_dur_melt_hrs=baseline_dur_melt_hrs, baseline_sp_soak=baseline_sp_soak,
             baseline_dur_soak_hrs=baseline_dur_soak_hrs, baseline_sp_hold=baseline_sp_hold,
         )
+
+        sankey_opt = self.model.calculate_sankey_energy_balance(
+            cum_gas_nm3=best_summary['cum_gas_nm3'],
+            cum_dross_kg=best_summary['cum_dross_kg'],
+            charged_weight_kg=charged_weight_kg,
+            residual_weight_kg=residual_weight_kg,
+            duration_hrs=discharge_deadline_hrs,
+            final_bath_temp_c=best_summary['final_bath_temp_c'],
+            alloy_name=alloy_name,
+            excess_air_pct=float(best_params[5]),
+        )
+        best_summary['sankey_balance'] = sankey_opt
+
+        sankey_base = self.model.calculate_sankey_energy_balance(
+            cum_gas_nm3=summary_base['cum_gas_nm3'],
+            cum_dross_kg=summary_base['cum_dross_kg'],
+            charged_weight_kg=charged_weight_kg,
+            residual_weight_kg=residual_weight_kg,
+            duration_hrs=discharge_deadline_hrs,
+            final_bath_temp_c=summary_base['final_bath_temp_c'],
+            alloy_name=alloy_name,
+            excess_air_pct=baseline_excess_air_pct,
+        )
+        summary_base['sankey_balance'] = sankey_base
         
         cost_savings_twd = summary_base['total_cost'] - best_summary['total_cost']
         cost_savings_pct = (cost_savings_twd / summary_base['total_cost']) * 100.0 if summary_base['total_cost'] > 0 else 0.0
@@ -461,6 +485,8 @@ class HeatingCurveOptimizer:
             'optimal_trajectory': best_df_sim,
             'baseline_summary': summary_base,
             'baseline_trajectory': df_base,
+            'sankey_optimal': sankey_opt,
+            'sankey_baseline': sankey_base,
             'savings': {
                 'cost_savings_twd': round(float(cost_savings_twd), 1),
                 'cost_savings_pct': round(float(cost_savings_pct), 2),
