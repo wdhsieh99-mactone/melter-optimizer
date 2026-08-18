@@ -168,12 +168,21 @@ class MelterPhysicsModel:
         x_frac = excess_air_pct / 100.0
         return (21.0 * x_frac) / (1.0 + x_frac * 1.05)
 
-    def radiant_heat_flux_kw(self, roof_temp_c: float, bath_temp_c: float) -> float:
+    def radiant_heat_flux_kw(self, roof_temp_c: float, bath_temp_c: float, is_flat_bath: bool = False) -> float:
         """Calculates radiant heat transfer rate between roof refractory and bath surface (kW).
-        Positive when heat flows roof -> bath; negative when bath is hotter than roof and radiates out."""
+        Positive when heat flows roof -> bath; negative when bath radiates out.
+        Accounts for dross layer thermal resistance (10-30mm oxide layer) once flat molten bath forms.
+        """
         t_roof_k = roof_temp_c + 273.15
         t_bath_k = bath_temp_c + 273.15
-        return STEFAN_BOLTZMANN * self.emissivity_eff * self.HEARTH_AREA_M2 * (t_roof_k**4 - t_bath_k**4)
+        dross_factor = 0.70 if is_flat_bath else 1.0
+        return STEFAN_BOLTZMANN * self.emissivity_eff * self.HEARTH_AREA_M2 * (t_roof_k**4 - t_bath_k**4) * dross_factor
+
+    def bath_bottom_loss_kw(self, bath_temp_c: float) -> float:
+        """Heat conduction loss from molten bath to furnace hearth bottom refractory & ambient (kW)."""
+        if bath_temp_c <= 100.0:
+            return 0.0
+        return 85.0 * max(0.0, bath_temp_c - 25.0) / (780.0 - 25.0)
 
     def dross_burnoff_rate_kg_hr(
         self,

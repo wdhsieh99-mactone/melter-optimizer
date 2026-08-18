@@ -163,38 +163,48 @@ class HeatingCurveOptimizer:
             current_roof_temp += np.clip(roof_err * 0.25, -k_roof_response, k_roof_response)
             roof_temps.append(current_roof_temp)
             
-            # Heat transfer between roof/combustion space and bath (Radiant + Convection) - Bidirectional
-            q_rad_kw = self.model.radiant_heat_flux_kw(current_roof_temp, current_bath_temp)
-            q_conv_kw = 1.2 * self.model.HEARTH_AREA_M2 * (current_roof_temp - current_bath_temp) * 0.015 # kW
-            q_total_kw = q_rad_kw + q_conv_kw
+            is_flat_bath = (current_bath_temp >= liquidus)
+
+            # Heat transfer between roof/combustion space and bath (Radiant + Convection - Hearth Loss)
+            q_rad_kw = self.model.radiant_heat_flux_kw(current_roof_temp, current_bath_temp, is_flat_bath=is_flat_bath)
+            q_conv_kw = 1.2 * self.model.HEARTH_AREA_M2 * (current_roof_temp - current_bath_temp) * (0.010 if is_flat_bath else 0.015)
+            q_hearth_loss_kw = self.model.bath_bottom_loss_kw(current_bath_temp)
+            q_net_to_bath_kw = q_rad_kw + q_conv_kw - q_hearth_loss_kw
             
             # Combustion efficiency considering excess air ratio
             eff = self.model.combustion_efficiency(current_roof_temp, excess_air_pct=excess_air_pct)
             
-            if q_total_kw > 0:
-                # Heat flowing from roof into bath
-                q_combustion_needed_kw = q_total_kw / eff + self.model.wall_loss_kw
+            # DCS PID / High-Limit Throttle Behavior:
+            # When bath reaches target_bath_temp_c (e.g. 780°C) or roof setpoint is reached:
+            # Burners throttle down to maintain heat balance rather than forcing runaway overheating.
+            if current_bath_temp >= (target_bath_temp_c + 2.0):
+                # Molten bath is at or above target tap temperature -> throttle burners to holding
+                q_hold_needed_kw = self.model.wall_loss_kw + q_hearth_loss_kw
+                gas_flow_unclamp = (q_hold_needed_kw * 3600.0) / self.model.GAS_LHV if self.model.GAS_LHV > 0 else 0.0
+                gas_flow_nm3h = max(50.0, min(MAX_GAS_FLOW_SINGLE_PAIR, gas_flow_unclamp))
+                q_combustion_actual_kw = (gas_flow_nm3h * self.model.GAS_LHV) / 3600.0 if self.model.GAS_LHV > 0 else 0.0
+                # Bath temperature is gently clamped to maintain target
+                q_bath_actual_kw = max(-30.0, min(30.0, (q_combustion_actual_kw - self.model.wall_loss_kw) * eff - q_hearth_loss_kw))
+            elif q_net_to_bath_kw > 0:
+                q_combustion_needed_kw = (q_rad_kw + q_conv_kw) / eff + self.model.wall_loss_kw
                 gas_flow_unclamp = (q_combustion_needed_kw * 3600.0) / self.model.GAS_LHV if self.model.GAS_LHV > 0 else 0.0
                 gas_flow_nm3h = min(max_gas_limit, gas_flow_unclamp)
                 
-                # Energy balance: heat transferred to bath cannot exceed available burner output minus wall loss
                 q_combustion_actual_kw = (gas_flow_nm3h * self.model.GAS_LHV) / 3600.0 if self.model.GAS_LHV > 0 else 0.0
                 q_bath_max_kw = max(0.0, (q_combustion_actual_kw - self.model.wall_loss_kw) * eff)
-                q_bath_actual_kw = min(q_total_kw, q_bath_max_kw)
+                q_bath_actual_kw = min(q_net_to_bath_kw, q_bath_max_kw - q_hearth_loss_kw)
             else:
-                # Bath is hotter than roof: bath radiates/convects heat out to roof/exhaust (cooling)
-                # Minimum holding fire to offset standing wall losses
+                # Bath is hotter than roof/loss -> cool down
                 q_combustion_needed_kw = self.model.wall_loss_kw
                 gas_flow_unclamp = (q_combustion_needed_kw * 3600.0) / self.model.GAS_LHV if self.model.GAS_LHV > 0 else 0.0
                 gas_flow_nm3h = min(max_gas_limit, max(50.0, gas_flow_unclamp))
-                q_bath_actual_kw = q_total_kw  # Negative heat transfer (bath cooling)
+                q_bath_actual_kw = q_net_to_bath_kw
 
             q_step_kj = q_bath_actual_kw * (dt_mins * 60.0)
             gas_step_nm3 = gas_flow_nm3h * dt_hrs
             cumulative_gas_nm3 += gas_step_nm3
             
             # Alloy-specific dross oxidation burnoff
-            is_flat_bath = (current_bath_temp >= liquidus)
             dross_rate_kghr = self.model.dross_burnoff_rate_kg_hr(
                 roof_temp_c=current_roof_temp,
                 bath_temp_c=current_bath_temp,
@@ -322,7 +332,12 @@ class HeatingCurveOptimizer:
         best_df_sim = None
         best_summary = None
 
-        sp_melts = np.linspace(1120.0, max_roof_sp_limit, 5)
+        candidate_sp_melts = [1120.0, 1140.0, 1160.0, 1180.0, 1200.0, 1220.0, 1250.0]
+        sp_melts = [sp for sp in candidate_sp_melts if sp <= max_roof_sp_limit]
+        if max_roof_sp_limit not in sp_melts:
+            sp_melts.append(max_roof_sp_limit)
+        sp_melts = sorted(list(set(sp_melts)))
+        
         t_sw1_grid = np.linspace(discharge_deadline_hrs * 0.40, discharge_deadline_hrs * 0.70, 5)
         sp_soaks = [950.0, 1000.0, 1050.0]
         sp_holds = [750.0, 780.0]
