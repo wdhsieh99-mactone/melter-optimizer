@@ -165,23 +165,46 @@ st.markdown("""
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         border-left: 4px solid #1E88E5;
     }
+    /* Plotly Sankey node text: crisp solid black text without stroke or shadow */
+    .js-plotly-plot .sankey-node text,
+    .sankey-node text,
+    text.node-label {
+        fill: #111827 !important;
+        stroke: none !important;
+        -webkit-text-stroke: 0px !important;
+        text-shadow: none !important;
+        font-weight: 500 !important;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
 
 def build_sankey_figure(sankey_data: dict, title: str = "熔煉爐全爐熱平衡能流圖 (Sankey Diagram)"):
     """Constructs an interactive Plotly Sankey diagram representing full furnace heat balance."""
+    q_fuel = max(0.01, sankey_data['q_fuel_gj'])
+    q_ox = max(0.01, sankey_data['q_ox_gj'])
+    q_air_preheat = max(0.01, sankey_data['q_air_preheat_gj'])
+    q_al = max(0.01, sankey_data['q_al_absorbed_gj'])
+    q_dross_sens = max(0.01, sankey_data['q_dross_sensible_gj'])
+    q_wall = max(0.01, sankey_data['q_wall_hearth_gj'])
+    q_roof_leak = max(0.01, sankey_data['q_roof_exhaust_gj'])
+    q_bed_flue = max(0.01, sankey_data['q_bed_flue_in_gj'])
+    q_stack = max(0.01, sankey_data['q_stack_loss_gj'])
+    
+    q_total = max(0.01, q_fuel + q_ox + q_air_preheat)
+    
     labels = [
-        "1. 燃料燃燒熱 (Fuel Combustion)",       # 0
-        "2. 鋁/鎂氧化反應熱 (Dross Oxidation)",   # 1
-        "3. 預熱助燃空氣 (Preheated Air)",       # 2
-        "4. 爐膛熱交換中心 (Furnace Chamber)",     # 3
-        "5. 鋁金屬熔解有效吸熱 (Molten Al)",       # 4
-        "6. 鋁渣升溫顯熱 (Dross Sensible)",       # 5
-        "7. 爐壁與爐底散熱 (Wall & Hearth)",      # 6
-        "8. 爐頂/爐門逸散煙氣 (Roof Leak)",       # 7
-        "9. 進入蓄熱床煙氣 (Flue to Beds)",      # 8
-        "10. 煙囪排煙損失 (Final Stack Loss)",    # 9
+        f"1. 燃料燃燒熱: {q_fuel:.1f} GJ ({q_fuel/q_total*100:.1f}%)",                 # 0
+        f"2. 鋁/鎂氧化熱: {q_ox:.1f} GJ ({q_ox/q_total*100:.1f}%)",                   # 1
+        f"3. 預熱助燃空氣: {q_air_preheat:.1f} GJ ({q_air_preheat/q_total*100:.1f}%)", # 2
+        f"4. 爐膛熱交換中心: {q_total:.1f} GJ (100%)",                                 # 3
+        f"5. 鋁液有效吸熱: {q_al:.1f} GJ ({q_al/q_total*100:.1f}%)",                  # 4
+        f"6. 鋁渣升溫顯熱: {q_dross_sens:.1f} GJ ({q_dross_sens/q_total*100:.1f}%)",   # 5
+        f"7. 爐壁爐底散熱: {q_wall:.1f} GJ ({q_wall/q_total*100:.1f}%)",               # 6
+        f"8. 爐頂逸散煙氣: {q_roof_leak:.1f} GJ ({q_roof_leak/q_total*100:.1f}%)",     # 7
+        f"9. 進入蓄熱床煙氣: {q_bed_flue:.1f} GJ ({q_bed_flue/q_total*100:.1f}%)",     # 8
+        f"10. 煙囪排煙損失: {q_stack:.1f} GJ ({q_stack/q_total*100:.1f}%)",            # 9
     ]
     
     node_colors = [
@@ -197,16 +220,6 @@ def build_sankey_figure(sankey_data: dict, title: str = "熔煉爐全爐熱平�
         "#78909C",  # Stack Loss - Grey Blue
     ]
     
-    q_fuel = max(0.01, sankey_data['q_fuel_gj'])
-    q_ox = max(0.01, sankey_data['q_ox_gj'])
-    q_air_preheat = max(0.01, sankey_data['q_air_preheat_gj'])
-    q_al = max(0.01, sankey_data['q_al_absorbed_gj'])
-    q_dross_sens = max(0.01, sankey_data['q_dross_sensible_gj'])
-    q_wall = max(0.01, sankey_data['q_wall_hearth_gj'])
-    q_roof_leak = max(0.01, sankey_data['q_roof_exhaust_gj'])
-    q_bed_flue = max(0.01, sankey_data['q_bed_flue_in_gj'])
-    q_stack = max(0.01, sankey_data['q_stack_loss_gj'])
-    
     sources = [0, 1, 2, 3, 3, 3, 3, 3, 8, 8]
     targets = [3, 3, 3, 4, 5, 6, 7, 8, 2, 9]
     values = [
@@ -216,34 +229,40 @@ def build_sankey_figure(sankey_data: dict, title: str = "熔煉爐全爐熱平�
     ]
     
     link_colors = [
-        "rgba(30, 136, 229, 0.45)",   # Fuel
-        "rgba(251, 140, 0, 0.45)",   # Ox
-        "rgba(0, 172, 193, 0.45)",   # Preheat
-        "rgba(67, 160, 71, 0.55)",    # Al
-        "rgba(255, 167, 38, 0.45)",  # Dross
-        "rgba(141, 110, 99, 0.45)",  # Wall
-        "rgba(229, 57, 53, 0.45)",   # Roof leak
-        "rgba(126, 87, 194, 0.45)",  # Flue bed
-        "rgba(0, 172, 193, 0.50)",   # Recycle
-        "rgba(120, 144, 156, 0.45)", # Stack
+        "rgba(30, 136, 229, 0.40)",   # Fuel
+        "rgba(251, 140, 0, 0.40)",   # Ox
+        "rgba(0, 172, 193, 0.40)",   # Preheat
+        "rgba(67, 160, 71, 0.50)",    # Al
+        "rgba(255, 167, 38, 0.40)",  # Dross
+        "rgba(141, 110, 99, 0.40)",  # Wall
+        "rgba(229, 57, 53, 0.40)",   # Roof leak
+        "rgba(126, 87, 194, 0.40)",  # Flue bed
+        "rgba(0, 172, 193, 0.45)",   # Recycle
+        "rgba(120, 144, 156, 0.40)", # Stack
     ]
     
     custom_nodes = [
-        f"{q_fuel:.2f} GJ", f"{q_ox:.2f} GJ", f"{q_air_preheat:.2f} GJ",
-        f"{q_fuel + q_ox + q_air_preheat:.2f} GJ",
-        f"{q_al:.2f} GJ", f"{q_dross_sens:.2f} GJ", f"{q_wall:.2f} GJ",
-        f"{q_roof_leak:.2f} GJ", f"{q_bed_flue:.2f} GJ", f"{q_stack:.2f} GJ"
+        f"{q_fuel:.2f} GJ ({q_fuel/q_total*100:.1f}%)",
+        f"{q_ox:.2f} GJ ({q_ox/q_total*100:.1f}%)",
+        f"{q_air_preheat:.2f} GJ ({q_air_preheat/q_total*100:.1f}%)",
+        f"{q_total:.2f} GJ (100%)",
+        f"{q_al:.2f} GJ ({q_al/q_total*100:.1f}%)",
+        f"{q_dross_sens:.2f} GJ ({q_dross_sens/q_total*100:.1f}%)",
+        f"{q_wall:.2f} GJ ({q_wall/q_total*100:.1f}%)",
+        f"{q_roof_leak:.2f} GJ ({q_roof_leak/q_total*100:.1f}%)",
+        f"{q_bed_flue:.2f} GJ ({q_bed_flue/q_total*100:.1f}%)",
+        f"{q_stack:.2f} GJ ({q_stack/q_total*100:.1f}%)"
     ]
     
     fig = go.Figure(data=[go.Sankey(
         node=dict(
-            pad=18,
+            pad=20,
             thickness=22,
-            line=dict(color="#37474F", width=0.8),
+            line=dict(color="#212121", width=0.5),
             label=labels,
             color=node_colors,
             customdata=custom_nodes,
-            hovertemplate='%{label}<br>熱能總量: <b>%{customdata}</b><extra></extra>'
+            hovertemplate='%{label}<br>熱能量: <b>%{customdata}</b><extra></extra>'
         ),
         link=dict(
             source=sources,
@@ -256,8 +275,8 @@ def build_sankey_figure(sankey_data: dict, title: str = "熔煉爐全爐熱平�
     
     fig.update_layout(
         title_text=title,
-        font=dict(size=13, family="sans-serif"),
-        height=540,
+        font=dict(size=12, color="#111827", family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"),
+        height=560,
         margin=dict(l=15, r=15, t=50, b=20)
     )
     return fig
