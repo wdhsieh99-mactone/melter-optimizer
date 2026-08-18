@@ -57,6 +57,7 @@ class HeatingCurveOptimizer:
         max_gas_flow_dual_pair: float = MAX_GAS_FLOW_DUAL_PAIR,
         max_gas_flow_single_pair: float = MAX_GAS_FLOW_SINGLE_PAIR,
         min_gas_flow_nm3h: float = 50.0,
+        **kwargs
     ):
         self.model = physics_model if physics_model is not None else MelterPhysicsModel()
         self.max_gas_flow_dual_pair = max_gas_flow_dual_pair

@@ -110,6 +110,7 @@ class MelterPhysicsModel:
         dross_factor_flat: Optional[float] = None,
         gas_lhv: Optional[float] = None,
         regen_base_eff: Optional[float] = None,
+        **kwargs
     ):
         # Any constant left as None picks up the value fitted by src/calibration.py against
         # real production data (if calibration has been run), else the hardcoded fallback here.

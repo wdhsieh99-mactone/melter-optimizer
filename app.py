@@ -289,25 +289,57 @@ def get_optimizer_and_evaluator(cfg: dict = None):
         cfg = load_app_config()
     proc_cfg = cfg.get('process', {})
     p_cfg = cfg.get('physics', {})
-    model = MelterPhysicsModel(
-        gas_price=proc_cfg.get('gas_price', 15.0),
-        aluminum_price=proc_cfg.get('aluminum_price', 75.0),
-        wall_loss_kw=p_cfg.get('wall_loss_kw', 250.0),
-        emissivity_eff=p_cfg.get('emissivity_eff', 0.85),
-        burnoff_k0=p_cfg.get('burnoff_k0', 0.015),
-        burnoff_ea=p_cfg.get('burnoff_ea', 45000.0),
-        hearth_area_m2=p_cfg.get('hearth_area_m2', 40.0),
-        hearth_loss_ref_kw=p_cfg.get('hearth_loss_ref_kw', 85.0),
-        dross_factor_flat=p_cfg.get('dross_factor_flat', 0.70),
-        gas_lhv=p_cfg.get('gas_lhv_kj_nm3', 37256.0),
-        regen_base_eff=p_cfg.get('regen_base_eff', 0.74),
-    )
-    opt = HeatingCurveOptimizer(
-        physics_model=model,
-        max_gas_flow_dual_pair=p_cfg.get('max_gas_flow_dual_pair', 880.0),
-        max_gas_flow_single_pair=p_cfg.get('max_gas_flow_single_pair', 440.0),
-        min_gas_flow_nm3h=p_cfg.get('min_gas_flow_nm3h', 50.0),
-    )
+    
+    # Defensive instantiation: works whether imported freshly or cached in long-running Streamlit process
+    try:
+        model = MelterPhysicsModel(
+            gas_price=proc_cfg.get('gas_price', 15.0),
+            aluminum_price=proc_cfg.get('aluminum_price', 75.0),
+            wall_loss_kw=p_cfg.get('wall_loss_kw', 250.0),
+            emissivity_eff=p_cfg.get('emissivity_eff', 0.85),
+            burnoff_k0=p_cfg.get('burnoff_k0', 0.015),
+            burnoff_ea=p_cfg.get('burnoff_ea', 45000.0),
+            hearth_area_m2=p_cfg.get('hearth_area_m2', 66.15),
+            hearth_loss_ref_kw=p_cfg.get('hearth_loss_ref_kw', 85.0),
+            dross_factor_flat=p_cfg.get('dross_factor_flat', 0.70),
+            gas_lhv=p_cfg.get('gas_lhv_kj_nm3', 37256.0),
+            regen_base_eff=p_cfg.get('regen_base_eff', 0.74),
+        )
+    except TypeError:
+        model = MelterPhysicsModel(
+            gas_price=proc_cfg.get('gas_price', 15.0),
+            aluminum_price=proc_cfg.get('aluminum_price', 75.0),
+            wall_loss_kw=p_cfg.get('wall_loss_kw', 250.0),
+            emissivity_eff=p_cfg.get('emissivity_eff', 0.85),
+            burnoff_k0=p_cfg.get('burnoff_k0', 0.015),
+            burnoff_ea=p_cfg.get('burnoff_ea', 45000.0),
+        )
+    
+    # Set attributes directly on instance to guarantee values regardless of constructor signature
+    model.HEARTH_AREA_M2 = float(p_cfg.get('hearth_area_m2', 66.15))
+    model.hearth_loss_ref_kw = float(p_cfg.get('hearth_loss_ref_kw', 85.0))
+    model.dross_factor_flat = float(p_cfg.get('dross_factor_flat', 0.70))
+    model.GAS_LHV = float(p_cfg.get('gas_lhv_kj_nm3', 37256.0))
+    model.regen_base_eff = float(p_cfg.get('regen_base_eff', 0.74))
+    model.gas_price = float(proc_cfg.get('gas_price', 15.0))
+    model.aluminum_price = float(proc_cfg.get('aluminum_price', 75.0))
+    model.wall_loss_kw = float(p_cfg.get('wall_loss_kw', 250.0))
+    model.emissivity_eff = float(p_cfg.get('emissivity_eff', 0.85))
+
+    try:
+        opt = HeatingCurveOptimizer(
+            physics_model=model,
+            max_gas_flow_dual_pair=float(p_cfg.get('max_gas_flow_dual_pair', 880.0)),
+            max_gas_flow_single_pair=float(p_cfg.get('max_gas_flow_single_pair', 440.0)),
+            min_gas_flow_nm3h=float(p_cfg.get('min_gas_flow_nm3h', 50.0)),
+        )
+    except TypeError:
+        opt = HeatingCurveOptimizer(physics_model=model)
+
+    opt.max_gas_flow_dual_pair = float(p_cfg.get('max_gas_flow_dual_pair', 880.0))
+    opt.max_gas_flow_single_pair = float(p_cfg.get('max_gas_flow_single_pair', 440.0))
+    opt.min_gas_flow_nm3h = float(p_cfg.get('min_gas_flow_nm3h', 50.0))
+
     evaluator = MelterEvaluator(opt)
     return model, opt, evaluator
 
