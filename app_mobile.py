@@ -377,6 +377,7 @@ def main():
             value=f"${base_sum['total_cost']:,.0f}",
             help=f"天然氣費 ${base_sum['gas_cost']:,.0f} + 氧化燒損金屬損失 ${base_sum['dross_cost']:,.0f}"
         )
+        st.caption(f"💰 瓦斯: **${base_sum['gas_cost']:,.0f}** + 燒損: **${base_sum['dross_cost']:,.0f}**")
         st.metric(
             label="天然氣總耗量 (Nm³)",
             value=f"{base_sum['cum_gas_nm3']:,.1f}",
@@ -402,7 +403,7 @@ def main():
             value=f"{base_melt_rate_t_h:.2f}",
             help=f"投料溶解噸數 {charged_metal_tonnes:.1f}t / 達到液相線全融時長 {format_hours_to_hhmm(base_melt_hrs)}"
         )
-        st.caption(f"⏱️ 全融時長: **{format_hours_to_hhmm(base_melt_hrs)}**")
+        st.caption(f"⏱️ 全融時長: **{format_hours_to_hhmm(base_melt_hrs)}** ({base_melt_hrs:.2f}h)")
         st.metric(
             label="現行過剩空氣率 (%)",
             value=f"{excess_air_pct:.1f}%",
@@ -421,6 +422,7 @@ def main():
             delta_color="normal",
             help=f"天然氣費 ${opt_sum['gas_cost']:,.0f} + 氧化燒損金屬損失 ${opt_sum['dross_cost']:,.0f}"
         )
+        st.caption(f"💰 瓦斯: **${opt_sum['gas_cost']:,.0f}** + 燒損: **${opt_sum['dross_cost']:,.0f}**")
         st.metric(
             label="天然氣總耗量 (Nm³)",
             value=f"{opt_sum['cum_gas_nm3']:,.1f}",
@@ -428,7 +430,7 @@ def main():
             delta_color="normal",
             help=f"最佳化天然氣單耗: {opt_gas_per_t:.1f} Nm³/t (下降 {base_gas_per_t - opt_gas_per_t:.1f} Nm³/t)"
         )
-        st.caption(f"📊 單耗: **{opt_gas_per_t:.1f} Nm³/t**")
+        st.caption(f"📊 單耗: **{opt_gas_per_t:.1f} Nm³/t** (降 {base_gas_per_t - opt_gas_per_t:.1f})")
         st.metric(
             label="最佳 3 段階梯溫控 (°C)",
             value=f"{opt_params['sp_roof_melt']:.0f} → {opt_params['sp_roof_soak']:.0f} → {opt_params['sp_roof_hold']:.0f}",
@@ -446,7 +448,7 @@ def main():
             delta_color="normal",
             help=f"最佳化投料氧化燒損率: {opt_dross_pct:.2f}% (降低 {base_dross_pct - opt_dross_pct:.2f} 個百分點)"
         )
-        st.caption(f"🔥 燒損率: **{opt_dross_pct:.2f}%**")
+        st.caption(f"🔥 燒損率: **{opt_dross_pct:.2f}%** (降 {base_dross_pct - opt_dross_pct:.2f}%)")
         st.metric(
             label="溶解速率 (t/h)",
             value=f"{opt_melt_rate_t_h:.2f}",
@@ -454,7 +456,7 @@ def main():
             delta_color="normal",
             help=f"投料溶解噸數 {charged_metal_tonnes:.1f}t / 達到液相線全融時長 {format_hours_to_hhmm(opt_melt_hrs)}"
         )
-        st.caption(f"⏱️ 全融時長: **{format_hours_to_hhmm(opt_melt_hrs)}**")
+        st.caption(f"⏱️ 全融時長: **{format_hours_to_hhmm(opt_melt_hrs)}** (提早 {format_hours_to_hhmm(base_melt_hrs - opt_melt_hrs)})")
         st.metric(
             label="最佳過剩空氣率 (%)",
             value=f"{opt_params['excess_air_pct']:.1f}%",
