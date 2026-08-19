@@ -604,6 +604,7 @@ def main():
 
         # Section 1: Comprehensive KPI Comparison
         total_metal_tonnes = (charged_weight_kg + residual_weight_kg) / 1000.0
+        charged_metal_tonnes = charged_weight_kg / 1000.0
         base_gas_per_t = base_sum['cum_gas_nm3'] / total_metal_tonnes if total_metal_tonnes > 0 else 0.0
         opt_gas_per_t = opt_sum['cum_gas_nm3'] / total_metal_tonnes if total_metal_tonnes > 0 else 0.0
         
@@ -613,14 +614,17 @@ def main():
         gas_pct = ((base_sum['cum_gas_nm3'] - opt_sum['cum_gas_nm3']) / base_sum['cum_gas_nm3']) * 100.0 if base_sum['cum_gas_nm3'] > 0 else 0.0
         dross_pct = ((base_sum['cum_dross_kg'] - opt_sum['cum_dross_kg']) / base_sum['cum_dross_kg']) * 100.0 if base_sum['cum_dross_kg'] > 0 else 0.0
 
-        # Melting Thermal Efficiency (%) Calculation
-        base_gas_lhv = getattr(model, 'GAS_LHV', 37256.0)
-        q_theory_dict = model.calculate_theoretical_energy(charged_weight_kg + residual_weight_kg, selected_alloy, 25.0, target_bath_temp)
-        q_theory_gj = q_theory_dict.get('total_energy_kj', q_theory_dict.get('total_theoretical_energy_kj', 0.0)) / 1e6
-        base_fuel_gj = (base_sum['cum_gas_nm3'] * base_gas_lhv) / 1e6
-        opt_fuel_gj = (opt_sum['cum_gas_nm3'] * base_gas_lhv) / 1e6
-        base_melt_eff = (q_theory_gj / base_fuel_gj) * 100.0 if base_fuel_gj > 0 else 0.0
-        opt_melt_eff = (q_theory_gj / opt_fuel_gj) * 100.0 if opt_fuel_gj > 0 else 0.0
+        # Melting Rate (噸/小時 = 投料溶解噸數 / 完全熔解達液相線時長)
+        base_liq_rows = df_base[df_base['bath_temp_c'] >= props['liquidus']]
+        base_melt_hrs = float(base_liq_rows.iloc[0]['time_hrs']) if not base_liq_rows.empty else float(target_duration_hrs)
+        
+        opt_liq_rows = df_opt[df_opt['bath_temp_c'] >= props['liquidus']]
+        opt_melt_hrs = float(opt_liq_rows.iloc[0]['time_hrs']) if not opt_liq_rows.empty else float(target_duration_hrs)
+
+        base_melt_rate_t_h = charged_metal_tonnes / base_melt_hrs if base_melt_hrs > 0 else 0.0
+        opt_melt_rate_t_h = charged_metal_tonnes / opt_melt_hrs if opt_melt_hrs > 0 else 0.0
+        melt_rate_delta_t_h = opt_melt_rate_t_h - base_melt_rate_t_h
+        melt_rate_delta_pct = (melt_rate_delta_t_h / base_melt_rate_t_h * 100.0) if base_melt_rate_t_h > 0 else 0.0
 
         st.markdown("#### 📌 熔煉能耗、成本與燒損綜合對照 (Baseline vs. Optimal Summary)")
 
@@ -649,11 +653,11 @@ def main():
             st.caption(f"🔥 燒損率: **{base_dross_pct:.2f}%**")
         with b_col4:
             st.metric(
-                label="熔解熱效率 (%)",
-                value=f"{base_melt_eff:.1f}",
-                help="理論熔解熱焓 / 燃料燃燒總熱量 (Theoretical Enthalpy / Fuel Energy Input)"
+                label="溶解速率 (t/h)",
+                value=f"{base_melt_rate_t_h:.2f}",
+                help=f"投料溶解噸數 {charged_metal_tonnes:.1f}t / 達到液相線全融時長 {format_hours_to_hhmm(base_melt_hrs)}"
             )
-            st.caption("🔥 理論熱/燃料總熱")
+            st.caption(f"⏱️ 全融時長: **{format_hours_to_hhmm(base_melt_hrs)}**")
         with b_col5:
             base_mode_val = f"{base_sp1:.0f}" if dur1_hrs >= target_duration_hrs else f"{base_sp1:.0f} → {base_sp3:.0f}"
             st.metric(
@@ -699,13 +703,13 @@ def main():
             st.caption(f"🔥 燒損率: **{opt_dross_pct:.2f}%**")
         with o_col4:
             st.metric(
-                label="熔解熱效率 (%)",
-                value=f"{opt_melt_eff:.1f}",
-                delta=f"+{opt_melt_eff - base_melt_eff:.1f}%",
+                label="溶解速率 (t/h)",
+                value=f"{opt_melt_rate_t_h:.2f}",
+                delta=f"+{melt_rate_delta_t_h:.2f} t/h (+{melt_rate_delta_pct:.1f}%)",
                 delta_color="normal",
-                help="理論熔解熱焓 / 燃料燃燒總熱量 (Theoretical Enthalpy / Fuel Energy Input)"
+                help=f"投料溶解噸數 {charged_metal_tonnes:.1f}t / 達到液相線全融時長 {format_hours_to_hhmm(opt_melt_hrs)}"
             )
-            st.caption("🔥 理論熱/燃料總熱")
+            st.caption(f"⏱️ 全融時長: **{format_hours_to_hhmm(opt_melt_hrs)}**")
         with o_col5:
             st.metric(
                 label="最佳 3 段階梯溫控 (°C)",
@@ -738,7 +742,8 @@ def main():
                     "天然氣單耗 (Specific Gas Consumption)",
                     "鋁錠氧化燒損量 (Dross Generated)",
                     "投料燒損率 (Dross Loss %)",
-                    "熔解熱效率 (Melting Thermal Efficiency)",
+                    "平均溶解速率 (Melting Rate)",
+                    "完全融解時長 (Time to Liquidus)",
                     "三段溫控時段 (3-Step Timing Intervals)",
                     "熔化/平湯/保溫 頂溫設點 (Stepwise Roof SP)",
                     "過剩空氣率 / 煙道殘氧 (Excess Air / Flue O₂)",
@@ -752,7 +757,8 @@ def main():
                     f"{base_gas_per_t:.1f} Nm³/t",
                     f"{base_sum['cum_dross_kg']:.1f} kg",
                     f"{base_dross_pct:.2f}%",
-                    f"{base_melt_eff:.1f}%",
+                    f"{base_melt_rate_t_h:.2f} t/h",
+                    f"{format_hours_to_hhmm(base_melt_hrs)} ({base_melt_hrs:.2f}h)",
                     base_timing_str,
                     base_sp_str,
                     f"{excess_air_pct:.1f}% ({est_o2:.2f}% O₂)",
@@ -766,7 +772,8 @@ def main():
                     f"{opt_gas_per_t:.1f} Nm³/t",
                     f"{opt_sum['cum_dross_kg']:.1f} kg",
                     f"{opt_dross_pct:.2f}%",
-                    f"{opt_melt_eff:.1f}%",
+                    f"{opt_melt_rate_t_h:.2f} t/h",
+                    f"{format_hours_to_hhmm(opt_melt_hrs)} ({opt_melt_hrs:.2f}h)",
                     f"第1段: 00:00~{format_hours_to_hhmm(opt_params['t_switch_hrs'])} | 第2段: {format_hours_to_hhmm(opt_params['t_switch_hrs'])}~{format_hours_to_hhmm(opt_params['t_soak_end_hrs'])} | 第3段: {format_hours_to_hhmm(opt_params['t_soak_end_hrs'])}~{format_hours_to_hhmm(target_duration_hrs)}",
                     f"{opt_params['sp_roof_melt']:.0f}°C (主熔) → {opt_params['sp_roof_soak']:.0f}°C (平湯) → {opt_params['sp_roof_hold']:.0f}°C (保溫)",
                     f"{opt_params['excess_air_pct']:.1f}% ({opt_params['flue_o2_pct']:.2f}% O₂)",
@@ -780,7 +787,8 @@ def main():
                     f"下降 -{base_gas_per_t - opt_gas_per_t:.1f} Nm³/t (-{gas_pct:.1f}%)",
                     f"減少 -{savings['dross_savings_kg']:.1f} kg (-{dross_pct:.1f}%)",
                     f"降低 -{base_dross_pct - opt_dross_pct:.2f} 個百分點",
-                    f"提升 +{opt_melt_eff - base_melt_eff:.1f} 個百分點",
+                    f"提速 +{melt_rate_delta_t_h:.2f} t/h (+{melt_rate_delta_pct:.1f}%)",
+                    f"提早 {format_hours_to_hhmm(base_melt_hrs - opt_melt_hrs)} 完成料堆全融",
                     f"主熔提早至 {format_hours_to_hhmm(opt_params['t_switch_hrs'])} 轉平湯降火",
                     "3 段階梯設定值，符合現場 PLC/DCS 執行需求",
                     f"過剩空氣減少 {excess_air_pct - opt_params['excess_air_pct']:.1f}%",
@@ -795,36 +803,82 @@ def main():
         st.subheader("1. 頂頭與鋁湯升溫曲線及燒嘴對切動態 (Temperature & Burner Pair Mode)")
         
         fig1 = go.Figure()
-        
-        # Baseline curves
-        baseline_trace_name = f'現場傳統模式設點 (Melt {base_sp1:.0f}°C 全火持續到底)' if dur1_hrs >= target_duration_hrs else f'現場傳統模式設點 (Melt {base_sp1:.0f}°C / {base_dur1_str} → Bath {base_sp3:.0f}°C)'
+
+        # Start-of-melt (solidus) and end-of-melt (liquidus) data points for both Baseline & Optimal
+        start_melt_opt = df_opt[df_opt['bath_temp_c'] >= props['solidus']]
+        end_melt_opt = df_opt[df_opt['bath_temp_c'] >= props['liquidus']]
+        start_melt_base = df_base[df_base['bath_temp_c'] >= props['solidus']]
+        end_melt_base = df_base[df_base['bath_temp_c'] >= props['liquidus']]
+
+        # --- Row 1 of Legend: 🏛️ 現行傳統模式 (Baseline) ---
+        baseline_sp_name = f'傳統頂溫設點 ({base_sp1:.0f}°C 全火到底)' if dur1_hrs >= target_duration_hrs else f'傳統頂溫設點 ({base_sp1:.0f}°C → {base_sp3:.0f}°C)'
         fig1.add_trace(go.Scatter(
             x=df_base['time_hrs'], y=df_base['sp_roof_c'],
-            name=baseline_trace_name,
-            line=dict(color='#E53935', dash='dash')
+            name=baseline_sp_name,
+            legendgroup='現行傳統模式',
+            legendgrouptitle=dict(text='<b>🏛️ 現行傳統模式：</b>'),
+            line=dict(color='#E53935', width=2, dash='dash')
         ))
         fig1.add_trace(go.Scatter(
             x=df_base['time_hrs'], y=df_base['bath_temp_c'],
             name='傳統鋁湯溫度 (TT200)',
+            legendgroup='現行傳統模式',
             line=dict(color='#D81B60', width=2)
         ))
-        
-        # Optimal curves
+        if not start_melt_base.empty:
+            r_b_s = start_melt_base.iloc[0]
+            fig1.add_trace(go.Scatter(
+                x=[r_b_s['time_hrs']], y=[r_b_s['bath_temp_c']], mode='markers',
+                marker=dict(symbol='triangle-up-open', size=15, line=dict(width=2.5, color='#E53935')),
+                name='傳統開始融解 (固相線 △)',
+                legendgroup='現行傳統模式'
+            ))
+        if not end_melt_base.empty:
+            r_b_e = end_melt_base.iloc[0]
+            fig1.add_trace(go.Scatter(
+                x=[r_b_e['time_hrs']], y=[r_b_e['bath_temp_c']], mode='markers',
+                marker=dict(symbol='circle-open', size=14, line=dict(width=2.5, color='#D81B60')),
+                name='傳統結束熔解 (液相線 ○)',
+                legendgroup='現行傳統模式'
+            ))
+
+        # --- Row 2 of Legend: 🚀 最佳化階梯模式 (Optimal) ---
+        opt_sp_name = f'最佳化 3 段階梯設點 ({opt_params["sp_roof_melt"]:.0f}°C → {opt_params["sp_roof_soak"]:.0f}°C → {opt_params["sp_roof_hold"]:.0f}°C)'
         fig1.add_trace(go.Scatter(
             x=df_opt['time_hrs'], y=df_opt['sp_roof_c'],
-            name=f'最佳化 3 段階梯設點 ({opt_params["sp_roof_melt"]:.0f}°C → {opt_params["sp_roof_soak"]:.0f}°C → {opt_params["sp_roof_hold"]:.0f}°C)',
+            name=opt_sp_name,
+            legendgroup='最佳化模式',
+            legendgrouptitle=dict(text='<br><b>🚀 最佳化階梯模式：</b>'),
             line=dict(color='#1E88E5', width=3)
         ))
         fig1.add_trace(go.Scatter(
             x=df_opt['time_hrs'], y=df_opt['roof_temp_c'],
             name='最佳化頂頭測溫 (TT201)',
+            legendgroup='最佳化模式',
             line=dict(color='#64B5F6', width=2)
         ))
         fig1.add_trace(go.Scatter(
             x=df_opt['time_hrs'], y=df_opt['bath_temp_c'],
             name='最佳化鋁湯溫度 (TT200)',
+            legendgroup='最佳化模式',
             line=dict(color='#43A047', width=3)
         ))
+        if not start_melt_opt.empty:
+            r_o_s = start_melt_opt.iloc[0]
+            fig1.add_trace(go.Scatter(
+                x=[r_o_s['time_hrs']], y=[r_o_s['bath_temp_c']], mode='markers',
+                marker=dict(symbol='triangle-up', size=14, color='#F57C00', line=dict(width=1.5, color='black')),
+                name='最佳化開始融解 (固相線 ▲)',
+                legendgroup='最佳化模式'
+            ))
+        if not end_melt_opt.empty:
+            r_o_e = end_melt_opt.iloc[0]
+            fig1.add_trace(go.Scatter(
+                x=[r_o_e['time_hrs']], y=[r_o_e['bath_temp_c']], mode='markers',
+                marker=dict(symbol='circle', size=14, color='#2E7D32', line=dict(width=1.5, color='black')),
+                name='最佳化結束熔解 (液相線 ●)',
+                legendgroup='最佳化模式'
+            ))
         
         # Threshold lines
         fig1.add_hline(y=props['liquidus'], line_dash="dash", line_color="gray", annotation_text=f"{selected_alloy} 液相線 {props['liquidus']}°C")
@@ -843,31 +897,21 @@ def main():
             annotation_text=f"目標出湯時間 {target_duration_hrs:.1f}h", annotation_position="top"
         )
 
-        # Start-of-melt (bath temp reaches solidus) / end-of-melt (reaches liquidus) markers
-        start_melt_rows = df_opt[df_opt['bath_temp_c'] >= props['solidus']]
-        end_melt_rows = df_opt[df_opt['bath_temp_c'] >= props['liquidus']]
-        if not start_melt_rows.empty:
-            r = start_melt_rows.iloc[0]
-            fig1.add_trace(go.Scatter(
-                x=[r['time_hrs']], y=[r['bath_temp_c']], mode='markers',
-                marker=dict(symbol='triangle-up', size=16, color='#F57C00', line=dict(width=1.5, color='black')),
-                name='開始溶解 (達固相線)'
-            ))
-        if not end_melt_rows.empty:
-            r = end_melt_rows.iloc[0]
-            fig1.add_trace(go.Scatter(
-                x=[r['time_hrs']], y=[r['bath_temp_c']], mode='markers',
-                marker=dict(symbol='circle', size=14, color='#2E7D32', line=dict(width=1.5, color='black')),
-                name='溶解結束 (達液相線)'
-            ))
-
         fig1.update_layout(
             title=f"鋁種 [{selected_alloy}] 升溫動態軌跡 (現場傳統模式 vs. 最佳化 3 段階梯模式)",
             xaxis_title="熔煉時間 (小時)",
             yaxis_title="溫度 (°C)",
             hovermode="x unified",
+            legend=dict(
+                orientation="h",
+                traceorder="grouped",
+                yanchor="top",
+                y=-0.22,
+                xanchor="center",
+                x=0.5
+            )
         )
-        finalize_chart_layout(fig1, height=560)
+        finalize_chart_layout(fig1, height=580)
         st.plotly_chart(fig1, use_container_width=True)
 
         # Multi-Step Discrete Recipe Table & Card for Field / DCS implementation
