@@ -368,54 +368,101 @@ def main():
     # --- 2. Comprehensive KPI Cards: Row 1 Baseline vs Row 2 Optimal ---
     st.markdown("### 📌 熔煉能耗、成本與燒損綜合對照")
     
-    # Row 1: 現行升溫方案基準
+    # Row 1: 現行升溫方案基準 (Current Practice Baseline)
     st.markdown("##### 🏛️ 現行升溫方案基準 (Current Practice)")
     b1, b2 = st.columns(2)
     with b1:
-        st.metric("每爐總生產成本 (TWD)", f"${base_sum['total_cost']:,.0f}")
-        st.metric("天然氣總耗量 (Nm³)", f"{base_sum['cum_gas_nm3']:,.1f}", help=f"單耗: {base_gas_per_t:.1f} Nm³/t")
-        st.metric("溫控設點模式 (°C)", f"{base_sp1:.0f} °C 全火" if dur1_hrs >= target_hrs else f"{base_sp1:.0f} → {base_sp3:.0f} °C")
+        st.metric(
+            label="每爐總生產成本 (TWD)",
+            value=f"${base_sum['total_cost']:,.0f}",
+            help=f"天然氣費 ${base_sum['gas_cost']:,.0f} + 氧化燒損金屬損失 ${base_sum['dross_cost']:,.0f}"
+        )
+        st.metric(
+            label="天然氣總耗量 (Nm³)",
+            value=f"{base_sum['cum_gas_nm3']:,.1f}",
+            help=f"天然氣單耗: {base_gas_per_t:.1f} Nm³/t"
+        )
+        st.caption(f"📊 單耗: **{base_gas_per_t:.1f} Nm³/t**")
+        base_mode_val = f"{base_sp1:.0f} °C" if dur1_hrs >= target_hrs else f"{base_sp1:.0f} → {base_sp3:.0f} °C"
+        st.metric(
+            label="溫控設點模式 (°C)",
+            value=base_mode_val,
+            help=f"現行方案操作：加料完成關門後融化模式 {base_sp1:.0f}°C 大火，持續至出湯或警示轉湯溫。"
+        )
+        st.caption("🔥 全火到底" if dur1_hrs >= target_hrs else f"⏱️ {base_dur1_str} 轉湯溫")
     with b2:
-        st.metric("氧化燒損渣量 (kg)", f"{base_sum['cum_dross_kg']:,.1f}", help=f"燒損率: {base_dross_pct:.2f}%")
-        st.metric("溶解速率 (t/h)", f"{base_melt_rate_t_h:.2f}", help=f"全融時長: {format_hours_to_hhmm(base_melt_hrs)}")
-        st.metric("現行過剩空氣率 (%)", f"{excess_air_pct:.1f}%", help=f"煙道殘氧: {est_o2:.2f}% O₂")
+        st.metric(
+            label="氧化燒損渣量 (kg)",
+            value=f"{base_sum['cum_dross_kg']:,.1f}",
+            help=f"投料氧化燒損率: {base_dross_pct:.2f}%"
+        )
+        st.caption(f"🔥 燒損率: **{base_dross_pct:.2f}%**")
+        st.metric(
+            label="溶解速率 (t/h)",
+            value=f"{base_melt_rate_t_h:.2f}",
+            help=f"投料溶解噸數 {charged_metal_tonnes:.1f}t / 達到液相線全融時長 {format_hours_to_hhmm(base_melt_hrs)}"
+        )
+        st.caption(f"⏱️ 全融時長: **{format_hours_to_hhmm(base_melt_hrs)}**")
+        st.metric(
+            label="現行過剩空氣率 (%)",
+            value=f"{excess_air_pct:.1f}%",
+            help="現行操作空燃比設定 (預設 40%)"
+        )
+        st.caption(f"💨 煙道殘氧: **{est_o2:.2f}% O₂**")
 
-    # Row 2: 最佳化階梯升溫模式
-    st.markdown("##### 🚀 最佳化階梯模式與降減效益")
+    # Row 2: 最佳化階梯升溫模式與降減效益
+    st.markdown("##### 🚀 最佳化階梯模式與降減效益 (Optimal vs. Baseline)")
     o1, o2 = st.columns(2)
     with o1:
         st.metric(
-            "每爐總生產成本 (TWD)",
-            f"${opt_sum['total_cost']:,.0f}",
-            delta=f"-${savings['cost_savings_twd']:,.0f} (-{savings['cost_savings_pct']:.1f}%)"
+            label="每爐總生產成本 (TWD)",
+            value=f"${opt_sum['total_cost']:,.0f}",
+            delta=f"-${savings['cost_savings_twd']:,.0f} (-{savings['cost_savings_pct']:.1f}%)",
+            delta_color="normal",
+            help=f"天然氣費 ${opt_sum['gas_cost']:,.0f} + 氧化燒損金屬損失 ${opt_sum['dross_cost']:,.0f}"
         )
         st.metric(
-            "天然氣總耗量 (Nm³)",
-            f"{opt_sum['cum_gas_nm3']:,.1f}",
-            delta=f"-{savings['gas_savings_nm3']:,.1f} Nm³ (-{gas_pct:.1f}%)"
+            label="天然氣總耗量 (Nm³)",
+            value=f"{opt_sum['cum_gas_nm3']:,.1f}",
+            delta=f"-{savings['gas_savings_nm3']:,.1f} Nm³ (-{gas_pct:.1f}%)",
+            delta_color="normal",
+            help=f"最佳化天然氣單耗: {opt_gas_per_t:.1f} Nm³/t (下降 {base_gas_per_t - opt_gas_per_t:.1f} Nm³/t)"
         )
+        st.caption(f"📊 單耗: **{opt_gas_per_t:.1f} Nm³/t**")
         st.metric(
-            "最佳 3 段階梯溫控 (°C)",
-            f"{opt_params['sp_roof_melt']:.0f}→{opt_params['sp_roof_soak']:.0f}→{opt_params['sp_roof_hold']:.0f}",
+            label="最佳 3 段階梯溫控 (°C)",
+            value=f"{opt_params['sp_roof_melt']:.0f} → {opt_params['sp_roof_soak']:.0f} → {opt_params['sp_roof_hold']:.0f}",
             delta="3 段階梯控溫",
-            delta_color="off"
+            delta_color="off",
+            help=f"3 段階梯設點：主熔 {opt_params['sp_roof_melt']:.0f}°C → 平湯 {opt_params['sp_roof_soak']:.0f}°C → 保溫 {opt_params['sp_roof_hold']:.0f}°C"
         )
+        if recipe_steps and len(recipe_steps) == 3:
+            st.caption(f"⏱️ 時段: **{recipe_steps[0]['duration_hhmm']} + {recipe_steps[1]['duration_hhmm']} + {recipe_steps[2]['duration_hhmm']}**")
     with o2:
         st.metric(
-            "氧化燒損渣量 (kg)",
-            f"{opt_sum['cum_dross_kg']:,.1f}",
-            delta=f"-{savings['dross_savings_kg']:,.1f} kg (-{dross_pct:.1f}%)"
+            label="氧化燒損渣量 (kg)",
+            value=f"{opt_sum['cum_dross_kg']:,.1f}",
+            delta=f"-{savings['dross_savings_kg']:,.1f} kg (-{dross_pct:.1f}%)",
+            delta_color="normal",
+            help=f"最佳化投料氧化燒損率: {opt_dross_pct:.2f}% (降低 {base_dross_pct - opt_dross_pct:.2f} 個百分點)"
         )
+        st.caption(f"🔥 燒損率: **{opt_dross_pct:.2f}%**")
         st.metric(
-            "溶解速率 (t/h)",
-            f"{opt_melt_rate_t_h:.2f}",
-            delta=f"+{melt_rate_delta_t_h:.2f} t/h (+{melt_rate_delta_pct:.1f}%)"
+            label="溶解速率 (t/h)",
+            value=f"{opt_melt_rate_t_h:.2f}",
+            delta=f"+{melt_rate_delta_t_h:.2f} t/h (+{melt_rate_delta_pct:.1f}%)",
+            delta_color="normal",
+            help=f"投料溶解噸數 {charged_metal_tonnes:.1f}t / 達到液相線全融時長 {format_hours_to_hhmm(opt_melt_hrs)}"
         )
+        st.caption(f"⏱️ 全融時長: **{format_hours_to_hhmm(opt_melt_hrs)}**")
         st.metric(
-            "最佳過剩空氣率 (%)",
-            f"{opt_params['excess_air_pct']:.1f}%",
-            delta=f"-{excess_air_pct - opt_params['excess_air_pct']:.1f}% (殘氧 {opt_params['flue_o2_pct']:.2f}%)"
+            label="最佳過剩空氣率 (%)",
+            value=f"{opt_params['excess_air_pct']:.1f}%",
+            delta=f"-{excess_air_pct - opt_params['excess_air_pct']:.1f}%",
+            delta_color="normal",
+            help=f"最佳化空燃比設定：過剩空氣率 {opt_params['excess_air_pct']:.1f}%，對應煙道殘氧 {opt_params['flue_o2_pct']:.2f}% O₂"
         )
+        st.caption(f"💨 煙道殘氧: **{opt_params['flue_o2_pct']:.2f}% O₂**")
 
     # --- 3. Detailed Comparison Table (Collapsible) ---
     base_timing_str = f"00:00~{format_hours_to_hhmm(target_hrs)} (1180°C 全火到底)" if dur1_hrs >= target_hrs else f"00:00~{format_hours_to_hhmm(dur1_hrs)} (融化) → 轉湯溫保溫"
