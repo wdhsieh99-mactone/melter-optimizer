@@ -146,15 +146,28 @@ def load_calibration_meta():
         return None
 
 
-# Page Configuration
+def get_local_ip() -> str:
+    """Attempts to find local LAN IP for mobile sharing."""
+    try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return '127.0.0.1'
+
+
+# Page Configuration (auto: collapsed on mobile, expanded on desktop)
 st.set_page_config(
     page_title="80T 熔鋁爐升溫曲線最佳化器",
     page_icon="🔥",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="auto"
 )
 
-# Custom Styling
+# Custom Styling with Mobile Responsive Layout
 st.markdown("""
     <style>
     .main {
@@ -177,6 +190,61 @@ st.markdown("""
         text-shadow: none !important;
         font-weight: 500 !important;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+    }
+
+    /* ========================================================
+       📱 Mobile Responsive Optimization (@media <= 768px)
+       ======================================================== */
+    @media (max-width: 768px) {
+        /* 1. Main container touch padding */
+        .block-container {
+            padding-top: 1.5rem !important;
+            padding-left: 0.6rem !important;
+            padding-right: 0.6rem !important;
+            padding-bottom: 2rem !important;
+        }
+        
+        /* 2. Grid & Metric Cards wrap nicely on mobile (2 columns per row) */
+        div[data-testid="column"] {
+            flex: 1 1 calc(50% - 0.4rem) !important;
+            min-width: calc(50% - 0.4rem) !important;
+            margin-bottom: 0.4rem !important;
+        }
+        
+        /* 3. Metric cards styling for mobile touch */
+        div[data-testid="stMetric"] {
+            background-color: #ffffff !important;
+            border-radius: 8px !important;
+            padding: 8px 10px !important;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06) !important;
+            border-left: 3px solid #1E88E5 !important;
+        }
+        div[data-testid="stMetricLabel"] p {
+            font-size: 0.76rem !important;
+            line-height: 1.2 !important;
+        }
+        div[data-testid="stMetricValue"] div {
+            font-size: 1.15rem !important;
+        }
+        
+        /* 4. Touch-friendly large buttons */
+        .stButton button {
+            min-height: 44px !important;
+            font-size: 0.98rem !important;
+            font-weight: 600 !important;
+            border-radius: 8px !important;
+        }
+        
+        /* 5. Guide cards full width on mobile */
+        .guide-step-card {
+            margin-bottom: 8px !important;
+        }
+        
+        /* 6. Tabs touch scroll */
+        div[data-testid="stTabs"] button {
+            font-size: 0.88rem !important;
+            padding: 6px 8px !important;
+        }
     }
     </style>
 """, unsafe_allow_html=True)
@@ -535,6 +603,15 @@ def main():
 
     st.sidebar.markdown("---")
     btn_calc_sidebar = st.sidebar.button("🚀 執行最佳化模擬計算", type="primary", use_container_width=True, help="點擊後依照當前設定之工藝條件與傳統基準執行熱力學最佳化運算")
+
+    # Mobile Web App Sharing & QR Code Section
+    local_ip = get_local_ip()
+    mobile_url = f"http://{local_ip}:8501"
+    qr_img_url = f"https://api.qrserver.com/v1/create-qr-code/?size=180x180&data={mobile_url}"
+    with st.sidebar.expander("📱 手機連線試用 (Mobile Web App)", expanded=False):
+        st.markdown(f"**同 Wi-Fi 內網網址**：\n`{mobile_url}`")
+        st.markdown(f'<div style="text-align: center; margin: 8px 0;"><img src="{qr_img_url}" width="130" style="border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,0.15);" alt="QR Code"><br><small style="color: #666;">手機相機掃描即可開啟</small></div>', unsafe_allow_html=True)
+        st.caption("💡 **加入手機主畫面 (PWA/Web App)**：\n1. 用 Safari (iOS) 或 Chrome (Android) 開啟網址。\n2. 點選【分享】或選單 → 選擇【加入主畫面】，即可獲得全螢幕 App 體驗！")
     
     # Main Tabs
     tab_title_bt = "📊 歷史爐次回測分析 (✅ 已解鎖)" if st.session_state.get('is_authenticated', False) else "📊 歷史爐次回測分析 (🔒 需授權)"
@@ -1003,7 +1080,7 @@ def main():
             )
         )
         finalize_chart_layout(fig1, height=580)
-        st.plotly_chart(fig1, use_container_width=True)
+        st.plotly_chart(fig1, use_container_width=True, config={'responsive': True, 'displayModeBar': False})
 
         # Multi-Step Discrete Recipe Table & Card for Field / DCS implementation
         st.markdown("##### 📝 DCS / PLC 現場 3 段階梯操作配方 (Multi-Step Temperature Control Recipe)")
@@ -1064,7 +1141,7 @@ def main():
         fig2.update_yaxes(title_text="累積耗氣量 (Nm³)", secondary_y=False)
         fig2.update_yaxes(title_text="瞬間流量 (Nm³/h)", secondary_y=True)
         finalize_chart_layout(fig2, height=480)
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig2, use_container_width=True, config={'responsive': True, 'displayModeBar': False})
 
         st.subheader("3. 鋁種燒損與成本結構對比 (Cost Breakdown)")
         categories = ['現場傳統 1180°C 全火模式', '最佳化 3 段階梯模式']
@@ -1077,7 +1154,7 @@ def main():
         ])
         fig3.update_layout(barmode='stack', title=f"[{selected_alloy}] 每爐綜合生產成本對比 (TWD)")
         finalize_chart_layout(fig3, height=480)
-        st.plotly_chart(fig3, use_container_width=True)
+        st.plotly_chart(fig3, use_container_width=True, config={'responsive': True, 'displayModeBar': False})
 
         st.markdown("---")
         st.subheader("4. 全爐熱平衡能流桑基圖 (Thermal Energy Sankey Diagram)")
@@ -1132,7 +1209,7 @@ def main():
 
         sankey_title = f"[{selected_alloy}] {sankey_mode} 全爐熱能流動平衡桑基圖 (單位: GJ)"
         fig_sankey = build_sankey_figure(s_data, title=sankey_title)
-        st.plotly_chart(fig_sankey, use_container_width=True)
+        st.plotly_chart(fig_sankey, use_container_width=True, config={'responsive': True, 'displayModeBar': False})
 
         with st.expander("📋 點此展開「熱輸入 vs. 熱輸出」數值明細表 (Heat Balance Breakdown Table)", expanded=False):
             df_sk_breakdown = pd.DataFrame({
