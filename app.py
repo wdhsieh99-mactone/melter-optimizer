@@ -974,21 +974,35 @@ def main():
                 legendgroup='最佳化模式'
             ))
         
-        # Threshold lines
-        fig1.add_hline(y=props['liquidus'], line_dash="dash", line_color="gray", annotation_text=f"{selected_alloy} 液相線 {props['liquidus']}°C")
-        fig1.add_hline(y=target_bath_temp, line_dash="dot", line_color="green", annotation_text=f"目標出湯溫度 {target_bath_temp}°C")
+        # Threshold lines with clean, staggered, boxed annotations
+        fig1.add_hline(
+            y=props['liquidus'], line_dash="dash", line_color="gray",
+            annotation_text=f" ── {selected_alloy} 液相線 {props['liquidus']}°C ",
+            annotation_position="top left",
+            annotation=dict(bgcolor="rgba(255,255,255,0.85)", font=dict(color="#37474F", size=11))
+        )
+        fig1.add_hline(
+            y=target_bath_temp, line_dash="dot", line_color="#2E7D32",
+            annotation_text=f" ── 目標出湯溫度 {target_bath_temp}°C ",
+            annotation_position="bottom right",
+            annotation=dict(bgcolor="rgba(255,255,255,0.85)", font=dict(color="#2E7D32", size=11))
+        )
 
         # Vertical line at the traditional bath control switchover point (if not continuous to end)
         if dur1_hrs < target_duration_hrs:
             fig1.add_vline(
                 x=dur1_hrs, line_dash="dot", line_color="#E53935", line_width=1.5,
-                annotation_text=f"傳統改湯溫 ({base_dur1_str})", annotation_position="bottom right"
+                annotation_text=f" 傳統改湯溫 ({base_dur1_str}) ",
+                annotation_position="bottom right",
+                annotation=dict(bgcolor="rgba(255,255,255,0.85)", font=dict(color="#E53935", size=10))
             )
 
         # Vertical line at the required discharge (tap-out) deadline.
         fig1.add_vline(
-            x=target_duration_hrs, line_dash="dashdot", line_color="purple", line_width=2,
-            annotation_text=f"目標出湯時間 {target_duration_hrs:.1f}h", annotation_position="top"
+            x=target_duration_hrs, line_dash="dashdot", line_color="#7B1FA2", line_width=2,
+            annotation_text=f" 目標出湯時間 {target_duration_hrs:.1f}h ",
+            annotation_position="top right",
+            annotation=dict(bgcolor="rgba(255,255,255,0.85)", font=dict(color="#7B1FA2", size=11))
         )
 
         fig1.update_layout(

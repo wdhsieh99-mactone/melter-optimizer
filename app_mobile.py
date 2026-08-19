@@ -569,8 +569,24 @@ def main():
         r_o_e = end_melt_opt.iloc[0]
         fig1.add_trace(go.Scatter(x=[r_o_e['time_hrs']], y=[r_o_e['bath_temp_c']], mode='markers', marker=dict(symbol='circle', size=13, color='#2E7D32', line=dict(width=1.5, color='black')), name='最佳化結束熔解 (液相線 ●)', legendgroup='最佳化模式'))
 
-    fig1.add_hline(y=props['liquidus'], line_dash="dash", line_color="gray", annotation_text=f"液相線 {props['liquidus']}°C", annotation_position="top left")
-    fig1.add_hline(y=target_bath_temp, line_dash="dot", line_color="green", annotation_text=f"出湯 {target_bath_temp}°C", annotation_position="bottom left")
+    fig1.add_hline(
+        y=props['liquidus'], line_dash="dash", line_color="gray",
+        annotation_text=f" ── {selected_alloy} 液相線 {props['liquidus']}°C ",
+        annotation_position="top left",
+        annotation=dict(bgcolor="rgba(255,255,255,0.85)", font=dict(color="#37474F", size=10))
+    )
+    fig1.add_hline(
+        y=target_bath_temp, line_dash="dot", line_color="#2E7D32",
+        annotation_text=f" ── 目標出湯 {target_bath_temp}°C ",
+        annotation_position="bottom right",
+        annotation=dict(bgcolor="rgba(255,255,255,0.85)", font=dict(color="#2E7D32", size=10))
+    )
+    fig1.add_vline(
+        x=target_hrs, line_dash="dashdot", line_color="#7B1FA2",
+        annotation_text=f" 出湯時限 {target_hrs:.1f}h ",
+        annotation_position="top right",
+        annotation=dict(bgcolor="rgba(255,255,255,0.85)", font=dict(color="#7B1FA2", size=10))
+    )
 
     fig1.update_layout(
         height=480,
