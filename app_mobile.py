@@ -132,6 +132,21 @@ st.markdown("""
         font-weight: 700 !important;
         border-radius: 8px !important;
     }
+
+    /* Plotly Sankey node text & chart titles: crisp solid black text without stroke or shadow */
+    .js-plotly-plot .sankey-node text,
+    .sankey-node text,
+    text.node-label,
+    .gtitle,
+    .js-plotly-plot text {
+        fill: #111827 !important;
+        stroke: none !important;
+        -webkit-text-stroke: 0px !important;
+        text-shadow: none !important;
+        filter: none !important;
+        font-weight: 700 !important;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -174,7 +189,12 @@ def build_sankey_figure(sankey_data: dict, title: str = "熔煉爐全爐熱平�
         node=dict(pad=15, thickness=16, line=dict(color="black", width=0.5), label=labels, color=node_colors),
         link=dict(source=sources, target=targets, value=values, color="rgba(180, 180, 180, 0.4)")
     )])
-    fig.update_layout(title_text=title, font_size=11, height=420, margin=dict(l=10, r=10, t=35, b=20))
+    fig.update_layout(
+        title=dict(text=f"<b>{title}</b>", font=dict(size=12, color="#111827", family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif")),
+        font=dict(size=11, color="#111827", family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"),
+        height=420,
+        margin=dict(l=10, r=10, t=35, b=20)
+    )
     return fig
 
 def main():

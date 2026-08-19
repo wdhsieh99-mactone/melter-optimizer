@@ -167,15 +167,18 @@ st.markdown("""
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         border-left: 4px solid #1E88E5;
     }
-    /* Plotly Sankey node text: crisp solid black text without stroke or shadow */
+    /* Plotly Sankey node text & chart titles: crisp solid black text without stroke or shadow */
     .js-plotly-plot .sankey-node text,
     .sankey-node text,
-    text.node-label {
+    text.node-label,
+    .gtitle,
+    .js-plotly-plot text {
         fill: #111827 !important;
         stroke: none !important;
         -webkit-text-stroke: 0px !important;
         text-shadow: none !important;
-        font-weight: 500 !important;
+        filter: none !important;
+        font-weight: 700 !important;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
     }
     </style>
@@ -276,7 +279,7 @@ def build_sankey_figure(sankey_data: dict, title: str = "熔煉爐全爐熱平�
     )])
     
     fig.update_layout(
-        title_text=title,
+        title=dict(text=f"<b>{title}</b>", font=dict(size=14, color="#111827", family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif")),
         font=dict(size=12, color="#111827", family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"),
         height=560,
         margin=dict(l=15, r=15, t=50, b=20)
