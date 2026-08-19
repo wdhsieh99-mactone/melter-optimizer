@@ -543,6 +543,96 @@ def main():
     ])
     
     with tab_single:
+        # Step-by-Step Interactive Onboarding Guide (Step 1 ~ Step 5)
+        with st.expander("💡 第一次使用？點此展開「5 步驟快速上手指南 (Quick Start Guide)」", expanded=False):
+            st.markdown(
+                """
+                <style>
+                .guide-step-card {
+                    background-color: #ffffff;
+                    border-radius: 8px;
+                    padding: 12px 14px;
+                    border-left: 4px solid #1E88E5;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+                    height: 100%;
+                }
+                .guide-step-title {
+                    font-weight: 700;
+                    color: #0D47A1;
+                    margin-bottom: 6px;
+                    font-size: 0.92rem;
+                }
+                .guide-step-desc {
+                    font-size: 0.82rem;
+                    color: #37474F;
+                    line-height: 1.45;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True
+            )
+            g_col1, g_col2, g_col3, g_col4, g_col5 = st.columns(5)
+            with g_col1:
+                st.markdown(
+                    """
+                    <div class="guide-step-card" style="border-left-color: #1E88E5;">
+                        <div class="guide-step-title">① 設定爐次條件</div>
+                        <div class="guide-step-desc">
+                            左側邊欄<b>「1. 爐次與產出條件」</b>選擇產出鋁種（如 5052），並輸入<b>投料噸數</b>、<b>殘湯量</b>與<b>目標時限</b>。
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+            with g_col2:
+                st.markdown(
+                    """
+                    <div class="guide-step-card" style="border-left-color: #FB8C00;">
+                        <div class="guide-step-title">② 確認現行方案</div>
+                        <div class="guide-step-desc">
+                            左側邊欄<b>「2. 現行升溫方案」</b>檢視目前大火時間與<b>現行過剩空氣率</b>（預設 40%），作為節能對照基準。
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+            with g_col3:
+                st.markdown(
+                    """
+                    <div class="guide-step-card" style="border-left-color: #43A047;">
+                        <div class="guide-step-title">③ 啟動最佳化計算</div>
+                        <div class="guide-step-desc">
+                            點擊<b>【🚀 執行最佳化模擬計算】</b>按鈕，系統即時搜尋最佳升溫階梯、節流時機與最低氧化燒損解。
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+            with g_col4:
+                st.markdown(
+                    """
+                    <div class="guide-step-card" style="border-left-color: #8E24AA;">
+                        <div class="guide-step-title">④ 檢視配方與效益</div>
+                        <div class="guide-step-desc">
+                            查看上方 <b>6 欄 KPI 對照</b>（成本/燃耗/溶解速率/燒損率）與下方<b>「DCS 3 段階梯操作配方」</b>卡片。
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+            with g_col5:
+                st.markdown(
+                    """
+                    <div class="guide-step-card" style="border-left-color: #00ACC1;">
+                        <div class="guide-step-title">⑤ 現場下發或儲存</div>
+                        <div class="guide-step-desc">
+                            將 3 段溫度設點與時間排程<b>輸入現場 DCS/PLC</b> 執行；或至<b>「⚙️ 系統預設」</b>分頁儲存常用參數。
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
         col_hdr, col_btn = st.columns([3, 1])
         with col_hdr:
             st.markdown(
@@ -1172,6 +1262,24 @@ def main():
                     st.dataframe(df_bt.style.format(fmt), use_container_width=True)
 
     with tab_manual:
+        st.subheader("🚀 熔鋁爐升溫最佳化器 — 5 步驟標準操作程序 (SOP)")
+        st.markdown("""
+        本最佳化系統專為 **Mechatherm 80T 反射式熔鋁爐** 設計，透過物理模型精確計算鋁合金固液相變潛熱、蓄熱式燒嘴空燃比與金屬高溫氧化動力學，產出可直接在現場 DCS / PLC 上執行的 **3 段階梯溫控配方**。
+        """)
+        
+        m_col1, m_col2, m_col3, m_col4, m_col5 = st.columns(5)
+        with m_col1:
+            st.info("**Step 1：設定條件**\n\n- 選擇產出鋁種合金\n- 輸入固體投料量 (t)\n- 輸入爐底殘湯量 (t)\n- 輸入預計出湯時限 (h)")
+        with m_col2:
+            st.info("**Step 2：確認現行**\n\n- 檢視目前 1180°C 大火時長\n- 設定現行過剩空氣率 (預設 40%)\n- 作為對照組基準")
+        with m_col3:
+            st.info("**Step 3：最佳化計算**\n\n- 點擊【🚀 執行最佳化計算】\n- 即時搜尋 3 段階梯設點\n- 平衡瓦斯耗量與燒損")
+        with m_col4:
+            st.info("**Step 4：檢視配方**\n\n- 評估 6 欄 KPI 與溶解速率\n- 檢視 3 段階梯配方卡片\n- 獲取主熔/平湯/保溫設點")
+        with m_col5:
+            st.info("**Step 5：現場下發**\n\n- 將 3 段設點輸入 DCS / PLC\n- 平湯及時降溫抑止氧化\n- 於「⚙️ 設定」儲存預設")
+
+        st.markdown("---")
         st.subheader("📘 Mechatherm 80T 4 燒嘴 2 對蓄熱式燃燒系統")
         st.markdown("""
         - **燒嘴配置**: 4 個大功率燒嘴組成 2 對 (Pair 1: 111/112, Pair 2: 113/114)。
