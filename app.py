@@ -464,8 +464,8 @@ def main():
         value=float(proc_cfg.get('max_roof_sp_limit', 1200.0)), step=10.0
     )
     
-    st.sidebar.subheader("2. 現場傳統操作基準設定 (3段溫控)")
-    with st.sidebar.expander("🛠️ 現場傳統溫控參數 (Melt / Flat / Bath Mode)", expanded=True):
+    st.sidebar.subheader("2. 現行升溫方案 (Current Heating Practice)")
+    with st.sidebar.expander("🛠️ 現行方案溫控與空燃比設定 (Melt / Flat / Bath / Excess Air)", expanded=True):
         st.markdown("**第 1 段：融化模式 (Melt Mode)**")
         col_t1_sp, col_t1_dur = st.columns([1, 1])
         with col_t1_sp:
@@ -476,7 +476,7 @@ def main():
             )
         with col_t1_dur:
             def_dur1_str = str(proc_cfg.get('baseline_dur1_hhmm', format_hours_to_hhmm(target_duration_hrs)))
-            base_dur1_str = st.text_input("第1段持續時間 (hh:mm)", value=def_dur1_str, key="base_dur1", help="現場傳統基準操作：加料關門後 1180°C 大火持續到底")
+            base_dur1_str = st.text_input("第1段持續時間 (hh:mm)", value=def_dur1_str, key="base_dur1", help="現行升溫方案操作：加料關門後 1180°C 大火持續到底")
 
         st.markdown("**第 2 段：平湯/過渡段 (Flat Bath Mode)**")
         col_t2_sp, col_t2_dur = st.columns([1, 1])
@@ -503,23 +503,24 @@ def main():
             rem_hrs = max(0.0, target_duration_hrs - dur1_hrs - dur2_hrs)
             st.caption(f"第3段持續時間：自動為剩餘 **{format_hours_to_hhmm(rem_hrs)}**")
 
+        st.markdown("---")
+        st.markdown("**空氣燃氣比與煙道殘氧設定 (Air-Fuel Ratio & Flue O₂)**")
+        excess_air_pct = st.slider(
+            "現行過剩空氣率 Excess Air (%)", min_value=5.0, max_value=60.0,
+            value=float(proc_cfg.get('excess_air_pct', 40.0)), step=1.0,
+            help="現場實測空燃比對應之過剩空氣率 (SCADA 實測約 40%~48%，預設 40%)"
+        )
+        if hasattr(model, 'calculate_flue_oxygen_pct'):
+            est_o2 = model.calculate_flue_oxygen_pct(excess_air_pct)
+        else:
+            x_frac = excess_air_pct / 100.0
+            est_o2 = (21.0 * x_frac) / (1.0 + x_frac * 1.05)
+        st.caption(f"💨 對應空燃比: **{9.52 * (1 + excess_air_pct/100.0):.2f} : 1** | 預估煙道殘氧 (AT104): **{est_o2:.2f}% O₂**")
+
     baseline_roof_sp = base_sp1
     baseline_switch_hrs = dur1_hrs
 
-    st.sidebar.subheader("3. 空氣燃氣比與殘氧設定")
-    excess_air_pct = st.sidebar.slider(
-        "基準過剩空氣率 Excess Air (%)", min_value=5.0, max_value=30.0,
-        value=float(proc_cfg.get('excess_air_pct', 25.0)), step=1.0
-    )
-    
-    if hasattr(model, 'calculate_flue_oxygen_pct'):
-        est_o2 = model.calculate_flue_oxygen_pct(excess_air_pct)
-    else:
-        x_frac = excess_air_pct / 100.0
-        est_o2 = (21.0 * x_frac) / (1.0 + x_frac * 1.05)
-    st.sidebar.caption(f"預估煙道殘氧量 (AT104): **{est_o2:.2f}% O₂**")
-    
-    st.sidebar.subheader("4. 能源與金屬價格")
+    st.sidebar.subheader("3. 能源與金屬價格")
     gas_price = st.sidebar.number_input(
         "天然氣單價 (TWD / Nm³)", min_value=5.0, max_value=50.0,
         value=float(proc_cfg.get('gas_price', 15.0)), step=1.0
@@ -628,8 +629,8 @@ def main():
 
         st.markdown("#### 📌 熔煉能耗、成本與燒損綜合對照 (Baseline vs. Optimal Summary)")
 
-        # Row 1: 傳統操作模式基準 (Baseline Practice) - 純絕對值呈現，單位置於標籤內
-        st.markdown("##### 🏛️ 傳統操作模式基準 (Baseline Practice)")
+        # Row 1: 現行升溫方案基準 (Current Practice Baseline) - 純絕對值呈現，單位置於標籤內
+        st.markdown("##### 🏛️ 現行升溫方案基準 (Current Practice Baseline)")
         b_col1, b_col2, b_col3, b_col4, b_col5, b_col6 = st.columns(6)
         with b_col1:
             st.metric(
@@ -663,14 +664,14 @@ def main():
             st.metric(
                 label="溫控設點模式 (°C)",
                 value=base_mode_val,
-                help=f"現場傳統基準：加料完成關門後融化模式 {base_sp1:.0f}°C 大火，持續至出湯或警示轉湯溫。"
+                help=f"現行方案操作：加料完成關門後融化模式 {base_sp1:.0f}°C 大火，持續至出湯或警示轉湯溫。"
             )
             st.caption("🔥 全火到底" if dur1_hrs >= target_duration_hrs else f"⏱️ {base_dur1_str} 轉湯溫")
         with b_col6:
             st.metric(
                 label="過剩空氣率 (%)",
                 value=f"{excess_air_pct:.1f}",
-                help="傳統操作空燃比設定"
+                help="現行操作空燃比設定 (預設 40%)"
             )
             st.caption(f"💨 煙道殘氧: **{est_o2:.2f}% O₂**")
 
@@ -732,7 +733,7 @@ def main():
         base_timing_str = f"00:00~{format_hours_to_hhmm(target_duration_hrs)} (1180°C 全火到底)" if dur1_hrs >= target_duration_hrs else f"00:00~{format_hours_to_hhmm(dur1_hrs)} (融化) → 轉湯溫保溫"
         base_sp_str = f"{base_sp1:.0f}°C 全火持續到底" if dur1_hrs >= target_duration_hrs else f"{base_sp1:.0f}°C (融化) → {base_sp3:.0f}°C (保溫)"
 
-        with st.expander("📋 點此展開「傳統 vs. 最佳化」各項指標詳細對照表", expanded=True):
+        with st.expander("📋 點此展開「現行方案 vs. 最佳化」各項指標詳細對照表", expanded=True):
             df_compare = pd.DataFrame({
                 "指標項目 (Metric)": [
                     "每爐綜合生產成本 (Total Cost)",
@@ -749,7 +750,7 @@ def main():
                     "過剩空氣率 / 煙道殘氧 (Excess Air / Flue O₂)",
                     "出湯達成時限 (Target Deadline Met)"
                 ],
-                "傳統操作基準 (Baseline)": [
+                "現行升溫方案 (Baseline)": [
                     f"${base_sum['total_cost']:,.0f} TWD",
                     f"${base_sum['gas_cost']:,.0f} TWD",
                     f"${base_sum['dross_cost']:,.0f} TWD",
@@ -1223,15 +1224,15 @@ def main():
                 s_target_temp = st.number_input("預設出湯目標湯溫 (°C)", min_value=700.0, max_value=800.0, value=float(proc_cfg.get('target_bath_temp_c', 780.0)), step=10.0, key="s_target_temp")
                 s_roof_limit = st.number_input("預設頂溫上限限制 (°C)", min_value=1050.0, max_value=1250.0, value=float(proc_cfg.get('max_roof_sp_limit', 1200.0)), step=10.0, key="s_roof_limit")
                 
-                st.markdown("##### 現場傳統基準設定")
-                s_base_sp1 = st.number_input("傳統第1段目標頂溫 (°C)", min_value=900.0, max_value=1250.0, value=float(proc_cfg.get('baseline_sp1', 1180.0)), step=10.0, key="s_base_sp1")
-                s_base_dur1 = st.text_input("傳統第1段持續時間 (hh:mm)", value=str(proc_cfg.get('baseline_dur1_hhmm', '06:00')), key="s_base_dur1")
-                s_base_sp2 = st.number_input("傳統第2段目標頂溫 (°C)", min_value=800.0, max_value=1150.0, value=float(proc_cfg.get('baseline_sp2', 950.0)), step=10.0, key="s_base_sp2")
-                s_base_dur2 = st.text_input("傳統第2段持續時間 (hh:mm)", value=str(proc_cfg.get('baseline_dur2_hhmm', '00:00')), key="s_base_dur2")
-                s_base_sp3 = st.number_input("傳統第3段保溫設點 (°C)", min_value=700.0, max_value=900.0, value=float(proc_cfg.get('baseline_sp3', 780.0)), step=10.0, key="s_base_sp3")
+                st.markdown("##### 🏛️ 現行升溫方案設定 (Current Practice)")
+                s_base_sp1 = st.number_input("現行第1段目標頂溫 (°C)", min_value=900.0, max_value=1250.0, value=float(proc_cfg.get('baseline_sp1', 1180.0)), step=10.0, key="s_base_sp1")
+                s_base_dur1 = st.text_input("現行第1段持續時間 (hh:mm)", value=str(proc_cfg.get('baseline_dur1_hhmm', '06:00')), key="s_base_dur1")
+                s_base_sp2 = st.number_input("現行第2段目標頂溫 (°C)", min_value=800.0, max_value=1150.0, value=float(proc_cfg.get('baseline_sp2', 950.0)), step=10.0, key="s_base_sp2")
+                s_base_dur2 = st.text_input("現行第2段持續時間 (hh:mm)", value=str(proc_cfg.get('baseline_dur2_hhmm', '00:00')), key="s_base_dur2")
+                s_base_sp3 = st.number_input("現行第3段保溫設點 (°C)", min_value=700.0, max_value=900.0, value=float(proc_cfg.get('baseline_sp3', 780.0)), step=10.0, key="s_base_sp3")
+                s_excess_air = st.number_input("現行過剩空氣率 (%)", min_value=5.0, max_value=60.0, value=float(proc_cfg.get('excess_air_pct', 40.0)), step=1.0, key="s_excess_air", help="現場實測空燃比對應之過剩空氣率 (SCADA 實測約 40%~48%，預設 40%)")
 
-                st.markdown("##### 燃燒與成本參數")
-                s_excess_air = st.number_input("基準過剩空氣率 (%)", min_value=5.0, max_value=30.0, value=float(proc_cfg.get('excess_air_pct', 25.0)), step=1.0, key="s_excess_air")
+                st.markdown("##### 經濟與成本參數 (Economic Parameters)")
                 s_gas_price = st.number_input("天然氣單價 (TWD/Nm³)", min_value=5.0, max_value=50.0, value=float(proc_cfg.get('gas_price', 15.0)), step=1.0, key="s_gas_price")
                 s_al_price = st.number_input("鋁錠/金屬單價 (TWD/kg)", min_value=30.0, max_value=150.0, value=float(proc_cfg.get('aluminum_price', 75.0)), step=5.0, key="s_al_price")
 
