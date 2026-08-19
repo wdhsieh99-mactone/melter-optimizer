@@ -159,6 +159,7 @@ class MelterPhysicsModel:
         
         return {
             'total_energy_kj': total_energy_kj,
+            'total_theoretical_energy_kj': total_energy_kj,
             'total_energy_kwh': total_energy_kwh,
             'theoretical_gas_nm3': theoretical_gas_nm3,
             'alloy_props': props,

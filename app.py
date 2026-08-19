@@ -616,7 +616,7 @@ def main():
         # Melting Thermal Efficiency (%) Calculation
         base_gas_lhv = getattr(model, 'GAS_LHV', 37256.0)
         q_theory_dict = model.calculate_theoretical_energy(charged_weight_kg + residual_weight_kg, selected_alloy, 25.0, target_bath_temp)
-        q_theory_gj = q_theory_dict['total_theoretical_energy_kj'] / 1e6
+        q_theory_gj = q_theory_dict.get('total_energy_kj', q_theory_dict.get('total_theoretical_energy_kj', 0.0)) / 1e6
         base_fuel_gj = (base_sum['cum_gas_nm3'] * base_gas_lhv) / 1e6
         opt_fuel_gj = (opt_sum['cum_gas_nm3'] * base_gas_lhv) / 1e6
         base_melt_eff = (q_theory_gj / base_fuel_gj) * 100.0 if base_fuel_gj > 0 else 0.0
