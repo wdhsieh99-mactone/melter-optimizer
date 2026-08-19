@@ -895,9 +895,10 @@ def main():
         # Chart 2 & 3: Gas Flow and Cost Breakdown -- full width, stacked vertically.
         st.subheader("2. 兩對燒嘴燃氣流量與累積耗氣量 (Gas Flow & 2-Pair Status)")
         fig2 = make_subplots(specs=[[{"secondary_y": True}]])
-        fig2.add_trace(go.Scatter(x=df_base['time_hrs'], y=df_base['cum_gas_nm3'], name='傳統累積天然氣 (Nm³)', line=dict(color='#E53935', dash='dash')), secondary_y=False)
+        fig2.add_trace(go.Scatter(x=df_base['time_hrs'], y=df_base['cum_gas_nm3'], name='傳統累積天然氣 (Nm³)', line=dict(color='#E53935', width=2, dash='dash')), secondary_y=False)
         fig2.add_trace(go.Scatter(x=df_opt['time_hrs'], y=df_opt['cum_gas_nm3'], name='最佳化累積天然氣 (Nm³)', line=dict(color='#1E88E5', width=2)), secondary_y=False)
-        fig2.add_trace(go.Scatter(x=df_opt['time_hrs'], y=df_opt['gas_flow_nm3h'], name='瞬間燃氣流量 (Nm³/h)', line=dict(color='#00ACC1', width=1.5)), secondary_y=True)
+        fig2.add_trace(go.Scatter(x=df_base['time_hrs'], y=df_base['gas_flow_nm3h'], name='傳統瞬間燃氣流量 (Nm³/h)', line=dict(color='#FB8C00', width=1.8, dash='dash')), secondary_y=True)
+        fig2.add_trace(go.Scatter(x=df_opt['time_hrs'], y=df_opt['gas_flow_nm3h'], name='最佳化瞬間燃氣流量 (Nm³/h)', line=dict(color='#00ACC1', width=2)), secondary_y=True)
 
         fig2.update_layout(title="燒嘴瞬間流量 (Nm³/h) 與累積氣量 (Nm³)")
         fig2.update_xaxes(title_text="熔煉時間 (小時)")
