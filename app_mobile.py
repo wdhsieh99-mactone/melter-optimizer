@@ -214,8 +214,8 @@ def main():
     savings = res['savings']
     base_sum = res['baseline_summary']
     opt_sum = res['optimal_summary']
-    df_opt = res['optimal_df']
-    df_base = res['baseline_df']
+    df_opt = res.get('optimal_trajectory', res.get('optimal_df'))
+    df_base = res.get('baseline_trajectory', res.get('baseline_df'))
     props = model.ALLOY_PROPERTIES[selected_alloy]
 
     # --- 1. DCS 3-Step Recipe for Mobile Operators ---
