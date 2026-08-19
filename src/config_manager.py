@@ -40,7 +40,7 @@ DEFAULT_APP_CONFIG: Dict[str, Any] = {
         "max_gas_flow_single_pair": 440.0,
         "min_gas_flow_nm3h": 50.0,
         "burnoff_ea": 45000.0,
-        "burnoff_k0": 0.015,
+        "burnoff_k0": 0.8583,
         "regen_base_eff": 0.74,
     }
 }
