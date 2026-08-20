@@ -161,3 +161,65 @@ def test_data_loader_and_sensor_summaries():
     assert not summaries.empty
     assert 'gas_integrated_nm3' in summaries.columns
     assert (summaries['gas_integrated_nm3'] > 0).all()
+
+
+def test_phase1_latent_heat_piecewise_logic():
+    model = MelterPhysicsModel()
+    # 5052: solidus 607°C, liquidus 650°C, latent_heat 390 kJ/kg
+    weight = 1000.0
+    # 1. Below solidus (e.g. 500°C) -> latent heat must be 0
+    res_solid = model.calculate_theoretical_energy(weight, alloy_name='5052', initial_temp_c=25.0, target_temp_c=500.0)
+    expected_sensible = weight * 0.90 * (500.0 - 25.0)
+    assert res_solid['total_energy_kj'] == expected_sensible
+
+    # 2. Above liquidus (e.g. 720°C) -> 100% latent heat + liquid sensible
+    res_liq = model.calculate_theoretical_energy(weight, alloy_name='5052', initial_temp_c=25.0, target_temp_c=720.0)
+    expected_total = (weight * 0.90 * (607.0 - 25.0)) + (weight * 390.0) + (weight * 1.08 * (720.0 - 650.0))
+    assert res_liq['total_energy_kj'] == expected_total
+
+    # 3. In mushy zone (e.g. 628.5°C, halfway between 607 and 650) -> 50% latent heat
+    res_mushy = model.calculate_theoretical_energy(weight, alloy_name='5052', initial_temp_c=25.0, target_temp_c=628.5)
+    expected_mushy = (weight * 0.90 * (607.0 - 25.0)) + (weight * 390.0 * 0.5)
+    assert abs(res_mushy['total_energy_kj'] - expected_mushy) < 1e-3
+
+
+def test_phase1_sankey_strict_energy_conservation():
+    model = MelterPhysicsModel()
+    sankey = model.calculate_sankey_energy_balance(
+        cum_gas_nm3=3500.0,
+        cum_dross_kg=1500.0,
+        charged_weight_kg=65000.0,
+        residual_weight_kg=5000.0,
+        duration_hrs=6.0,
+        final_bath_temp_c=780.0,
+        alloy_name='5052',
+        excess_air_pct=25.0,
+    )
+    assert sankey['residual_error_gj'] < 1e-4
+    assert abs(sankey['total_chamber_input_gj'] - sankey['total_chamber_output_gj']) < 1e-4
+    assert abs(sankey['total_system_input_gj'] - sankey['total_system_output_gj']) < 1e-4
+
+
+def test_phase1_timestep_t0_is_pure_initial_state():
+    opt = HeatingCurveOptimizer()
+    df_sim, _ = opt.simulate_trajectory(
+        charged_weight_kg=65000.0,
+        target_duration_hrs=6.0,
+        sp_roof_melt=1150.0,
+        t_switch_hrs=4.0,
+        sp_roof_hold=950.0,
+        alloy_name='5052',
+        excess_air_pct=15.0,
+        initial_bath_temp_c=25.0,
+        initial_roof_temp_c=850.0,
+        residual_weight_kg=0.0,
+    )
+    # At index 0 (t=0.0), state must be pure initial values
+    assert df_sim['time_hrs'].iloc[0] == 0.0
+    assert df_sim['cum_gas_nm3'].iloc[0] == 0.0
+    assert df_sim['cum_dross_kg'].iloc[0] == 0.0
+    assert df_sim['bath_temp_c'].iloc[0] == 25.0
+    assert df_sim['gas_flow_nm3h'].iloc[0] == 0.0
+    # Final time must equal duration exactly
+    assert df_sim['time_hrs'].iloc[-1] == 6.0
+

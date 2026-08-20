@@ -53,6 +53,7 @@ def compute_sankey_balance_helper(
     excess_air_pct: float = 15.0,
     wall_loss_kw: float = 250.0,
     gas_lhv: float = 37256.0,
+    overhead_dict: dict = None,
 ) -> dict:
     """Computes comprehensive Sankey energy balance (GJ)."""
     props = ALLOY_PROPERTIES.get(alloy_name, ALLOY_PROPERTIES.get('DEFAULT', {'solidus': 607.0, 'liquidus': 650.0, 'latent_heat': 397.0, 'cp_liquid': 1.18}))
@@ -68,9 +69,17 @@ def compute_sankey_balance_helper(
     
     # 2. Output Sinks
     total_metal_kg = charged_weight_kg + residual_weight_kg
-    delta_t_solid = min(solidus, final_bath_temp_c) - 25.0
-    sensible_solid = total_metal_kg * cp_solid * max(0.0, delta_t_solid)
-    latent_melt = total_metal_kg * latent_h if final_bath_temp_c >= liquidus else total_metal_kg * latent_h * 0.5
+    delta_t_solid = max(0.0, min(solidus, final_bath_temp_c) - 25.0)
+    sensible_solid = total_metal_kg * cp_solid * delta_t_solid
+    
+    if final_bath_temp_c <= solidus:
+        latent_melt = 0.0
+    elif final_bath_temp_c >= liquidus:
+        latent_melt = total_metal_kg * latent_h
+    else:
+        f_liq = (final_bath_temp_c - solidus) / (liquidus - solidus)
+        latent_melt = total_metal_kg * latent_h * f_liq
+        
     delta_t_liq = max(0.0, final_bath_temp_c - liquidus)
     sensible_liquid = total_metal_kg * cp_liq * delta_t_liq
     q_al_absorbed_gj = (sensible_solid + latent_melt + sensible_liquid) / 1e6
@@ -81,20 +90,34 @@ def compute_sankey_balance_helper(
     avg_hearth_loss_kw = 85.0 * max(0.0, final_bath_temp_c - 25.0) / (780.0 - 25.0) * 0.75
     q_wall_hearth_gj = ((wall_loss_kw + avg_hearth_loss_kw) * duration_hrs * 3600.0) / 1e6
     
-    # 3. Flue Gas Enthalpy Balance & Regenerator Recovery
-    net_heat_to_flue_gj = max(1.0, (q_fuel_gj + q_ox_gj) - (q_al_absorbed_gj + q_dross_sensible_gj + q_wall_hearth_gj))
+    if overhead_dict:
+        q_door_charge = overhead_dict.get('q_door_charge_gj', 0.0)
+        q_door_dross = overhead_dict.get('q_door_dross_gj', 0.0)
+        q_refractory_reheat = overhead_dict.get('q_refractory_reheat_gj', 0.0)
+        q_reversal_purge = (overhead_dict.get('gas_reversal_purge_nm3', 0.0) * gas_lhv) / 1e6
+        q_overhead_thermal_gj = q_door_charge + q_door_dross + q_refractory_reheat + q_reversal_purge
+    else:
+        q_overhead_thermal_gj = 0.0
+
+    # 3. Flue Gas Enthalpy Balance & Regenerator Recovery (Closed-Loop Thermal Balance)
+    q_absorbed_total_gj = q_al_absorbed_gj + q_dross_sensible_gj + q_wall_hearth_gj + q_overhead_thermal_gj
+    q_net_primary_gj = max(0.1, (q_fuel_gj + q_ox_gj) - q_absorbed_total_gj)
     
     regen_eff = 0.74 - (excess_air_pct - 15.0) * 0.003
     regen_eff = max(0.60, min(0.78, regen_eff))
     
-    q_roof_exhaust_gj = net_heat_to_flue_gj * 0.10
-    q_bed_flue_in_gj = net_heat_to_flue_gj * 0.90
+    q_flue_chamber_out_gj = q_net_primary_gj / (1.0 - 0.90 * regen_eff)
+    q_roof_exhaust_gj = q_flue_chamber_out_gj * 0.10
+    q_bed_flue_in_gj = q_flue_chamber_out_gj * 0.90
     q_air_preheat_gj = q_bed_flue_in_gj * regen_eff
     q_stack_loss_gj = q_bed_flue_in_gj * (1.0 - regen_eff)
     
     total_chamber_input_gj = q_fuel_gj + q_ox_gj + q_air_preheat_gj
-    total_chamber_output_gj = q_al_absorbed_gj + q_dross_sensible_gj + q_wall_hearth_gj + q_roof_exhaust_gj + q_bed_flue_in_gj
+    total_chamber_output_gj = q_absorbed_total_gj + q_roof_exhaust_gj + q_bed_flue_in_gj
     
+    total_system_input_gj = q_fuel_gj + q_ox_gj
+    total_system_output_gj = q_absorbed_total_gj + q_roof_exhaust_gj + q_stack_loss_gj
+
     thermal_eff_fuel_pct = (q_al_absorbed_gj / q_fuel_gj) * 100.0 if q_fuel_gj > 0 else 0.0
     thermal_eff_total_pct = (q_al_absorbed_gj / total_chamber_input_gj) * 100.0 if total_chamber_input_gj > 0 else 0.0
     regen_recovery_pct = (q_air_preheat_gj / q_bed_flue_in_gj) * 100.0 if q_bed_flue_in_gj > 0 else 0.0
@@ -108,10 +131,14 @@ def compute_sankey_balance_helper(
         'q_al_absorbed_gj': q_al_absorbed_gj,
         'q_dross_sensible_gj': q_dross_sensible_gj,
         'q_wall_hearth_gj': q_wall_hearth_gj,
+        'q_overhead_thermal_gj': q_overhead_thermal_gj,
         'q_roof_exhaust_gj': q_roof_exhaust_gj,
         'q_bed_flue_in_gj': q_bed_flue_in_gj,
         'q_stack_loss_gj': q_stack_loss_gj,
         'total_chamber_output_gj': total_chamber_output_gj,
+        'total_system_input_gj': total_system_input_gj,
+        'total_system_output_gj': total_system_output_gj,
+        'residual_error_gj': abs(total_chamber_input_gj - total_chamber_output_gj),
         'thermal_eff_fuel_pct': thermal_eff_fuel_pct,
         'thermal_eff_total_pct': thermal_eff_total_pct,
         'regen_recovery_pct': regen_recovery_pct,

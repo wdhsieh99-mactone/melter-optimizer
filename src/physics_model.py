@@ -145,13 +145,22 @@ class MelterPhysicsModel:
         
         cp_solid = 0.90 # kJ/kg*°C
         
-        delta_t1 = min(solidus, target_temp_c) - initial_temp_c
-        sensible_solid = weight_kg * cp_solid * max(0.0, delta_t1) # kJ
+        # Sensible heat solid
+        delta_t_solid = max(0.0, min(solidus, target_temp_c) - initial_temp_c)
+        sensible_solid = weight_kg * cp_solid * delta_t_solid # kJ
         
-        latent_heat = weight_kg * latent_h if target_temp_c >= liquidus else weight_kg * latent_h * 0.5 # kJ
+        # Latent heat with mushy zone linear lever rule
+        if target_temp_c <= solidus:
+            latent_heat = 0.0
+        elif target_temp_c >= liquidus:
+            latent_heat = weight_kg * latent_h
+        else:
+            f_liquid = (target_temp_c - solidus) / (liquidus - solidus)
+            latent_heat = weight_kg * latent_h * f_liquid
         
-        delta_t2 = max(0.0, target_temp_c - liquidus)
-        sensible_liquid = weight_kg * cp_liq * delta_t2 # kJ
+        # Sensible heat liquid
+        delta_t_liq = max(0.0, target_temp_c - liquidus)
+        sensible_liquid = weight_kg * cp_liq * delta_t_liq # kJ
         
         total_energy_kj = sensible_solid + latent_heat + sensible_liquid
         total_energy_kwh = total_energy_kj / 3600.0
@@ -245,10 +254,11 @@ class MelterPhysicsModel:
         final_bath_temp_c: float,
         alloy_name: str = '5052',
         excess_air_pct: float = 15.0,
+        overhead_dict: Optional[Dict[str, float]] = None,
     ) -> Dict[str, float]:
         """Calculates comprehensive thermodynamic energy balance (GJ) for Sankey diagram.
         Inputs: Fuel combustion enthalpy, Dross oxidation exothermic heat, Regenerator preheated air.
-        Outputs: Aluminum melting absorption, Dross sensible heat, Wall & hearth losses, Roof leakage exhaust, Regenerator stack loss.
+        Outputs: Aluminum melting absorption, Dross sensible heat, Wall & hearth losses, Overhead losses, Roof leakage exhaust, Regenerator stack loss.
         """
         props = get_alloy_props(alloy_name)
         solidus = props['solidus']
@@ -257,16 +267,24 @@ class MelterPhysicsModel:
         cp_liq = props['cp_liquid']
         cp_solid = 0.90 # kJ/kg*K
         
-        # 1. Inputs
+        # 1. Primary Chemical & Exothermic Inputs
         q_fuel_gj = (cum_gas_nm3 * self.GAS_LHV) / 1e6
         # Dross exothermic oxidation heat (4 Al + 3 O2 -> 2 Al2O3 releases ~31.05 MJ/kg Al oxidized)
         q_ox_gj = (cum_dross_kg * 0.60 * 31.05) / 1000.0
         
-        # 2. Output Sinks
+        # 2. Output Sinks (Metal & Furnace Enthalpy Sinks)
         total_metal_kg = charged_weight_kg + residual_weight_kg
-        delta_t_solid = min(solidus, final_bath_temp_c) - 25.0
-        sensible_solid = total_metal_kg * cp_solid * max(0.0, delta_t_solid)
-        latent_melt = total_metal_kg * latent_h if final_bath_temp_c >= liquidus else total_metal_kg * latent_h * 0.5
+        delta_t_solid = max(0.0, min(solidus, final_bath_temp_c) - 25.0)
+        sensible_solid = total_metal_kg * cp_solid * delta_t_solid
+        
+        if final_bath_temp_c <= solidus:
+            latent_melt = 0.0
+        elif final_bath_temp_c >= liquidus:
+            latent_melt = total_metal_kg * latent_h
+        else:
+            f_liq = (final_bath_temp_c - solidus) / (liquidus - solidus)
+            latent_melt = total_metal_kg * latent_h * f_liq
+            
         delta_t_liq = max(0.0, final_bath_temp_c - liquidus)
         sensible_liquid = total_metal_kg * cp_liq * delta_t_liq
         q_al_absorbed_gj = (sensible_solid + latent_melt + sensible_liquid) / 1e6
@@ -279,19 +297,36 @@ class MelterPhysicsModel:
         avg_hearth_loss_kw = self.bath_bottom_loss_kw(final_bath_temp_c) * 0.75
         q_wall_hearth_gj = ((self.wall_loss_kw + avg_hearth_loss_kw) * duration_hrs * 3600.0) / 1e6
         
-        # 3. Flue Gas Enthalpy Balance & Regenerator Recovery
-        net_heat_to_flue_gj = max(1.0, (q_fuel_gj + q_ox_gj) - (q_al_absorbed_gj + q_dross_sensible_gj + q_wall_hearth_gj))
+        # Field Operational Overhead Thermal Loss (Door radiation, refractory reheat, reversal purge)
+        if overhead_dict:
+            q_door_charge = overhead_dict.get('q_door_charge_gj', 0.0)
+            q_door_dross = overhead_dict.get('q_door_dross_gj', 0.0)
+            q_refractory_reheat = overhead_dict.get('q_refractory_reheat_gj', 0.0)
+            q_reversal_purge = (overhead_dict.get('gas_reversal_purge_nm3', 0.0) * self.GAS_LHV) / 1e6
+            q_overhead_thermal_gj = q_door_charge + q_door_dross + q_refractory_reheat + q_reversal_purge
+        else:
+            q_overhead_thermal_gj = 0.0
+        
+        # 3. Flue Gas Enthalpy Balance & Regenerator Recovery (Closed-Loop Thermal Balance)
+        q_absorbed_total_gj = q_al_absorbed_gj + q_dross_sensible_gj + q_wall_hearth_gj + q_overhead_thermal_gj
+        q_net_primary_gj = max(0.1, (q_fuel_gj + q_ox_gj) - q_absorbed_total_gj)
         
         regen_eff = self.regen_base_eff - (excess_air_pct - 15.0) * 0.003
         regen_eff = max(0.60, min(0.78, regen_eff))
         
-        q_roof_exhaust_gj = net_heat_to_flue_gj * 0.10
-        q_bed_flue_in_gj = net_heat_to_flue_gj * 0.90
+        # Flue gas leaving chamber: Q_flue = Q_net_primary / (1 - 0.90 * regen_eff)
+        # Preheated air recycling: Q_air = 0.90 * regen_eff * Q_flue
+        q_flue_chamber_out_gj = q_net_primary_gj / (1.0 - 0.90 * regen_eff)
+        q_roof_exhaust_gj = q_flue_chamber_out_gj * 0.10
+        q_bed_flue_in_gj = q_flue_chamber_out_gj * 0.90
         q_air_preheat_gj = q_bed_flue_in_gj * regen_eff
         q_stack_loss_gj = q_bed_flue_in_gj * (1.0 - regen_eff)
         
         total_chamber_input_gj = q_fuel_gj + q_ox_gj + q_air_preheat_gj
-        total_chamber_output_gj = q_al_absorbed_gj + q_dross_sensible_gj + q_wall_hearth_gj + q_roof_exhaust_gj + q_bed_flue_in_gj
+        total_chamber_output_gj = q_absorbed_total_gj + q_roof_exhaust_gj + q_bed_flue_in_gj
+        
+        total_system_input_gj = q_fuel_gj + q_ox_gj
+        total_system_output_gj = q_absorbed_total_gj + q_roof_exhaust_gj + q_stack_loss_gj
         
         thermal_eff_fuel_pct = (q_al_absorbed_gj / q_fuel_gj) * 100.0 if q_fuel_gj > 0 else 0.0
         thermal_eff_total_pct = (q_al_absorbed_gj / total_chamber_input_gj) * 100.0 if total_chamber_input_gj > 0 else 0.0
@@ -306,10 +341,14 @@ class MelterPhysicsModel:
             'q_al_absorbed_gj': q_al_absorbed_gj,
             'q_dross_sensible_gj': q_dross_sensible_gj,
             'q_wall_hearth_gj': q_wall_hearth_gj,
+            'q_overhead_thermal_gj': q_overhead_thermal_gj,
             'q_roof_exhaust_gj': q_roof_exhaust_gj,
             'q_bed_flue_in_gj': q_bed_flue_in_gj,
             'q_stack_loss_gj': q_stack_loss_gj,
             'total_chamber_output_gj': total_chamber_output_gj,
+            'total_system_input_gj': total_system_input_gj,
+            'total_system_output_gj': total_system_output_gj,
+            'residual_error_gj': abs(total_chamber_input_gj - total_chamber_output_gj),
             'thermal_eff_fuel_pct': thermal_eff_fuel_pct,
             'thermal_eff_total_pct': thermal_eff_total_pct,
             'regen_recovery_pct': regen_recovery_pct,

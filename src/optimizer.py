@@ -48,6 +48,9 @@ def parse_hhmm_to_hours(val, default: float = 0.0) -> float:
         return default
 
 
+TARGET_TEMP_TOLERANCE_C = 2.0  # Temperature tolerance for reaching target bath temp within deadline
+
+
 class HeatingCurveOptimizer:
     """Simulates and optimizes heating curves for aluminum melting furnaces."""
 
@@ -123,36 +126,34 @@ class HeatingCurveOptimizer:
         current_roof_temp = initial_roof_temp_c
         current_bath_temp = energy_to_bath_temp(current_energy_kj)
 
+        flue_o2 = self.model.calculate_flue_oxygen_pct(excess_air_pct)
+
         cumulative_gas_nm3 = 0.0
         cumulative_dross_kg = 0.0
+
+        # Initial condition at t = 0.0
+        times = [0.0]
+        sp_roofs = [sp_roof_melt]
+        roof_temps = [current_roof_temp]
+        bath_temps = [current_bath_temp]
+        gas_flows = [0.0]
+        cum_gases = [0.0]
+        cum_drosses = [0.0]
+        phases = ['初始加料 (Initial)']
+        burner_modes = ['Dual Pair (交替全火)']
+        flue_o2_pcts = [flue_o2]
         
-        times = []
-        sp_roofs = []
-        roof_temps = []
-        bath_temps = []
-        gas_flows = []
-        cum_gases = []
-        cum_drosses = []
-        phases = []
-        burner_modes = []
-        flue_o2_pcts = []
-        
-        flue_o2 = self.model.calculate_flue_oxygen_pct(excess_air_pct)
-        
-        for step in range(n_steps):
+        for step in range(1, n_steps + 1):
             t_hr = step * dt_hrs
-            times.append(t_hr)
+            t_mid = (step - 0.5) * dt_hrs
             
-            # Stepwise Discrete Multi-Step Setpoint Profile
-            # Step 1 (Main Melt): 0 <= t < t_switch_hrs -> sp_roof_melt (Constant SP)
-            # Step 2 (Flat Bath): t_switch_hrs <= t < t_soak_end_hrs -> sp_roof_soak (Constant SP)
-            # Step 3 (Hold & Tap): t >= t_soak_end_hrs -> sp_roof_hold (Constant SP)
-            if t_hr < t_switch_hrs:
+            # Stepwise Discrete Multi-Step Setpoint Profile evaluated at midpoint of interval
+            if t_mid < t_switch_hrs:
                 sp_roof = sp_roof_melt
                 phase = '第1段: 主熔化段 (Melt)'
                 burner_mode = 'Dual Pair (交替全火)'
                 max_gas_limit = self.max_gas_flow_dual_pair
-            elif t_soak_end_hrs is not None and sp_roof_soak is not None and t_hr < t_soak_end_hrs:
+            elif t_soak_end_hrs is not None and sp_roof_soak is not None and t_mid < t_soak_end_hrs:
                 sp_roof = sp_roof_soak
                 phase = '第2段: 平湯昇溫段 (Flat Bath)'
                 burner_mode = 'Dual Pair (交替中火)'
@@ -162,16 +163,11 @@ class HeatingCurveOptimizer:
                 phase = '第3段: 出湯保溫段 (Hold & Tap)' if (t_soak_end_hrs is not None and sp_roof_soak is not None) else '第2段: 出湯保溫段 (Hold & Tap)'
                 burner_mode = 'Single Pair (交替微火)'
                 max_gas_limit = self.max_gas_flow_single_pair
-
-            sp_roofs.append(sp_roof)
-            burner_modes.append(burner_mode)
-            flue_o2_pcts.append(flue_o2)
             
             # Roof temperature response
             k_roof_response = 15.0 # °C/min max response rate
             roof_err = sp_roof - current_roof_temp
-            current_roof_temp += np.clip(roof_err * 0.25, -k_roof_response, k_roof_response)
-            roof_temps.append(current_roof_temp)
+            current_roof_temp += np.clip(roof_err * 0.25, -k_roof_response * dt_mins, k_roof_response * dt_mins)
             
             is_flat_bath = (current_bath_temp >= liquidus)
 
@@ -184,16 +180,13 @@ class HeatingCurveOptimizer:
             # Combustion efficiency considering excess air ratio
             eff = self.model.combustion_efficiency(current_roof_temp, excess_air_pct=excess_air_pct)
             
-            # DCS PID / High-Limit Throttle Behavior:
-            # When bath reaches target_bath_temp_c (e.g. 780°C) or roof setpoint is reached:
-            # Burners throttle down to maintain heat balance rather than forcing runaway overheating.
+            # DCS PID / High-Limit Throttle Behavior
             if current_bath_temp >= (target_bath_temp_c + 2.0):
                 # Molten bath is at or above target tap temperature -> throttle burners to holding
                 q_hold_needed_kw = self.model.wall_loss_kw + q_hearth_loss_kw
                 gas_flow_unclamp = (q_hold_needed_kw * 3600.0) / self.model.GAS_LHV if self.model.GAS_LHV > 0 else 0.0
                 gas_flow_nm3h = max(self.min_gas_flow_nm3h, min(self.max_gas_flow_single_pair, gas_flow_unclamp))
                 q_combustion_actual_kw = (gas_flow_nm3h * self.model.GAS_LHV) / 3600.0 if self.model.GAS_LHV > 0 else 0.0
-                # Bath temperature is gently clamped to maintain target
                 q_bath_actual_kw = max(-30.0, min(30.0, (q_combustion_actual_kw - self.model.wall_loss_kw) * eff - q_hearth_loss_kw))
             elif q_net_to_bath_kw > 0:
                 q_combustion_needed_kw = (q_rad_kw + q_conv_kw) / eff + self.model.wall_loss_kw
@@ -222,18 +215,25 @@ class HeatingCurveOptimizer:
                 excess_air_pct=excess_air_pct,
                 is_flat_bath=is_flat_bath
             )
-            dross_step_kg = dross_rate_kghr * dt_hrs
+            # Mass conservation guardrail: cumulative dross cannot exceed 20% of total charged metal
+            max_dross_kg = total_weight_kg * 0.20
+            dross_step_kg = min(dross_rate_kghr * dt_hrs, max(0.0, max_dross_kg - cumulative_dross_kg))
             cumulative_dross_kg += dross_step_kg
             
-            # Bath state progression (dynamic energy accumulation and dissipation)
+            # Bath state progression
             current_energy_kj += q_step_kj
             current_bath_temp = energy_to_bath_temp(current_energy_kj)
 
+            times.append(t_hr)
+            sp_roofs.append(sp_roof)
+            roof_temps.append(current_roof_temp)
             bath_temps.append(current_bath_temp)
             gas_flows.append(gas_flow_nm3h)
             cum_gases.append(cumulative_gas_nm3)
             cum_drosses.append(cumulative_dross_kg)
             phases.append(phase)
+            burner_modes.append(burner_mode)
+            flue_o2_pcts.append(flue_o2)
 
         df_sim = pd.DataFrame({
             'time_hrs': times,
@@ -382,7 +382,7 @@ class HeatingCurveOptimizer:
                                 dt_mins=dt_mins,
                             )
                             # Primary constraint: must reach target bath temp within deadline
-                            if summary['final_bath_temp_c'] >= (target_bath_temp_c - 2.0):
+                            if summary['final_bath_temp_c'] >= (target_bath_temp_c - TARGET_TEMP_TOLERANCE_C):
                                 if summary['total_cost'] < best_cost:
                                     best_cost = summary['total_cost']
                                     best_params = (sp_m, t_sw1, sp_soak, t_sw2, sp_h, ex_air)
@@ -478,6 +478,7 @@ class HeatingCurveOptimizer:
             final_bath_temp_c=best_summary['final_bath_temp_c'],
             alloy_name=alloy_name,
             excess_air_pct=float(best_params[5]),
+            overhead_dict=overhead_opt if enable_overhead else None,
         )
         best_summary['sankey_balance'] = sankey_opt
 
@@ -490,6 +491,7 @@ class HeatingCurveOptimizer:
             final_bath_temp_c=summary_base['final_bath_temp_c'],
             alloy_name=alloy_name,
             excess_air_pct=baseline_excess_air_pct,
+            overhead_dict=overhead_base if enable_overhead else None,
         )
         summary_base['sankey_balance'] = sankey_base
         
@@ -498,7 +500,7 @@ class HeatingCurveOptimizer:
         gas_savings_nm3 = summary_base['cum_gas_nm3'] - best_summary['cum_gas_nm3']
         net_gas_savings_nm3 = summary_base['net_gas_nm3'] - best_summary['net_gas_nm3']
         dross_savings_kg = summary_base['cum_dross_kg'] - best_summary['cum_dross_kg']
-        deadline_met = best_summary['final_bath_temp_c'] >= (target_bath_temp_c - 5.0)
+        deadline_met = bool(best_summary['final_bath_temp_c'] >= (target_bath_temp_c - TARGET_TEMP_TOLERANCE_C))
 
         t_sw1_val = float(best_params[1])
         t_sw2_val = float(best_params[3])
