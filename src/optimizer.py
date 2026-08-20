@@ -333,16 +333,23 @@ class HeatingCurveOptimizer:
         baseline_sp_soak: Optional[float] = None,
         baseline_dur_soak_hrs: Optional[float] = 0.0,
         baseline_sp_hold: float = 780.0,
+        enable_overhead: bool = True,
+        charge_door_open_mins: float = 60.0,
+        dross_door_open_mins: float = 20.0,
+        reversal_loss_pct: float = 4.0,
+        refractory_reheat_gj: float = 7.0,
+        actual_total_duration_hrs: Optional[float] = None,
     ) -> Dict:
         """Finds the optimal discrete multi-step schedule (Step 1 Melt -> Step 2 Flat -> Step 3 Hold)
         that minimizes gas + dross cost, SUBJECT TO reaching target_bath_temp_c by discharge_deadline_hrs.
+        Also computes field dynamic operational overhead losses for full-cycle plant alignment.
         """
         best_cost = float('inf')
         best_params = None
         best_df_sim = None
         best_summary = None
 
-        candidate_sp_melts = [1120.0, 1140.0, 1160.0, 1180.0, 1200.0, 1220.0, 1250.0]
+        candidate_sp_melts = [1100.0, 1120.0, 1140.0, 1150.0, 1160.0, 1180.0, 1200.0, 1220.0, 1250.0]
         sp_melts = [sp for sp in candidate_sp_melts if sp <= max_roof_sp_limit]
         if max_roof_sp_limit not in sp_melts:
             sp_melts.append(max_roof_sp_limit)
@@ -368,47 +375,99 @@ class HeatingCurveOptimizer:
                                 t_soak_end_hrs=t_sw2,
                                 sp_roof_hold=sp_h,
                                 alloy_name=alloy_name,
-                                excess_air_pct=ex_air,
-                                target_bath_temp_c=target_bath_temp_c,
-                                dt_mins=dt_mins,
                                 residual_weight_kg=residual_weight_kg,
                                 residual_temp_c=residual_temp_c,
+                                excess_air_pct=ex_air,
+                                dt_mins=dt_mins,
                             )
+                            # Primary constraint: must reach target bath temp within deadline
+                            if summary['final_bath_temp_c'] >= (target_bath_temp_c - 2.0):
+                                if summary['total_cost'] < best_cost:
+                                    best_cost = summary['total_cost']
+                                    best_params = (sp_m, t_sw1, sp_soak, t_sw2, sp_h, ex_air)
+                                    best_df_sim = df_sim
+                                    best_summary = summary
 
-                            # Hard deadline constraint
-                            if summary['final_bath_temp_c'] < (target_bath_temp_c - 5.0):
-                                continue
-
-                            cost = summary['total_cost']
-                            if cost < best_cost:
-                                best_cost = cost
-                                best_params = (sp_m, t_sw1, sp_soak, t_sw2, sp_h, ex_air)
-                                best_df_sim = df_sim
-                                best_summary = summary
-
+        # Fallback if no solution reaches target bath temp
         if best_params is None:
-            # Fallback to hottest/leanest schedule if no schedule met deadline
-            best_df_sim, best_summary = self.run_baseline_scenario(
-                charged_weight_kg, discharge_deadline_hrs, alloy_name=alloy_name,
-                baseline_roof_sp=baseline_roof_sp, baseline_switch_hrs=baseline_switch_hrs,
-                baseline_excess_air_pct=baseline_excess_air_pct, dt_mins=dt_mins,
-                residual_weight_kg=residual_weight_kg, residual_temp_c=residual_temp_c,
-                target_bath_temp_c=target_bath_temp_c,
-                baseline_dur_melt_hrs=baseline_dur_melt_hrs, baseline_sp_soak=baseline_sp_soak,
-                baseline_dur_soak_hrs=baseline_dur_soak_hrs, baseline_sp_hold=baseline_sp_hold,
+            df_sim, summary = self.simulate_trajectory(
+                charged_weight_kg=charged_weight_kg,
+                target_duration_hrs=discharge_deadline_hrs,
+                sp_roof_melt=max_roof_sp_limit,
+                t_switch_hrs=discharge_deadline_hrs * 0.60,
+                sp_roof_soak=1000.0,
+                t_soak_end_hrs=discharge_deadline_hrs * 0.85,
+                sp_roof_hold=780.0,
+                alloy_name=alloy_name,
+                residual_weight_kg=residual_weight_kg,
+                residual_temp_c=residual_temp_c,
+                excess_air_pct=baseline_excess_air_pct,
+                dt_mins=dt_mins,
             )
-            best_params = (max_roof_sp_limit, discharge_deadline_hrs * 0.70, 1000.0, discharge_deadline_hrs * 0.85, 760.0, baseline_excess_air_pct)
+            best_params = (max_roof_sp_limit, discharge_deadline_hrs * 0.60, 1000.0, discharge_deadline_hrs * 0.85, 780.0, baseline_excess_air_pct)
+            best_df_sim = df_sim
+            best_summary = summary
 
+        # Baseline simulation
         df_base, summary_base = self.run_baseline_scenario(
-            charged_weight_kg, discharge_deadline_hrs, alloy_name=alloy_name,
-            baseline_roof_sp=baseline_roof_sp, baseline_switch_hrs=baseline_switch_hrs,
-            baseline_excess_air_pct=baseline_excess_air_pct, dt_mins=dt_mins,
-            residual_weight_kg=residual_weight_kg, residual_temp_c=residual_temp_c,
+            charged_weight_kg=charged_weight_kg,
+            target_duration_hrs=discharge_deadline_hrs,
+            alloy_name=alloy_name,
+            baseline_roof_sp=baseline_roof_sp,
+            baseline_switch_hrs=baseline_switch_hrs,
+            baseline_excess_air_pct=baseline_excess_air_pct,
+            dt_mins=dt_mins,
+            residual_weight_kg=residual_weight_kg,
+            residual_temp_c=residual_temp_c,
+            baseline_dur_melt_hrs=baseline_dur_melt_hrs,
+            baseline_sp_soak=baseline_sp_soak,
+            baseline_dur_soak_hrs=baseline_dur_soak_hrs,
+            baseline_sp_hold=baseline_sp_hold,
             target_bath_temp_c=target_bath_temp_c,
-            baseline_dur_melt_hrs=baseline_dur_melt_hrs, baseline_sp_soak=baseline_sp_soak,
-            baseline_dur_soak_hrs=baseline_dur_soak_hrs, baseline_sp_hold=baseline_sp_hold,
         )
 
+        # Field Operational Overhead Losses Calculation
+        overhead_base = self.model.calculate_field_overhead_losses(
+            charged_weight_kg=charged_weight_kg,
+            net_melt_gas_nm3=summary_base['cum_gas_nm3'],
+            target_duration_hrs=discharge_deadline_hrs,
+            actual_total_duration_hrs=actual_total_duration_hrs,
+            charge_door_open_mins=charge_door_open_mins,
+            dross_door_open_mins=dross_door_open_mins,
+            reversal_loss_pct=reversal_loss_pct,
+            refractory_reheat_gj=refractory_reheat_gj,
+            enable_overhead=enable_overhead,
+        )
+        overhead_opt = self.model.calculate_field_overhead_losses(
+            charged_weight_kg=charged_weight_kg,
+            net_melt_gas_nm3=best_summary['cum_gas_nm3'],
+            target_duration_hrs=discharge_deadline_hrs,
+            actual_total_duration_hrs=actual_total_duration_hrs,
+            charge_door_open_mins=charge_door_open_mins,
+            dross_door_open_mins=dross_door_open_mins,
+            reversal_loss_pct=reversal_loss_pct,
+            refractory_reheat_gj=refractory_reheat_gj,
+            enable_overhead=enable_overhead,
+        )
+
+        # Attach overhead breakdown and full total gas
+        summary_base['overhead'] = overhead_base
+        summary_base['net_gas_nm3'] = summary_base['cum_gas_nm3']
+        summary_base['overhead_gas_nm3'] = overhead_base['total_overhead_gas_nm3']
+        summary_base['total_gas_nm3'] = summary_base['net_gas_nm3'] + overhead_base['total_overhead_gas_nm3']
+        summary_base['cum_gas_nm3'] = summary_base['total_gas_nm3'] if enable_overhead else summary_base['net_gas_nm3']
+        summary_base['gas_cost'] = summary_base['cum_gas_nm3'] * self.model.gas_price
+        summary_base['total_cost'] = summary_base['gas_cost'] + summary_base['dross_cost']
+
+        best_summary['overhead'] = overhead_opt
+        best_summary['net_gas_nm3'] = best_summary['cum_gas_nm3']
+        best_summary['overhead_gas_nm3'] = overhead_opt['total_overhead_gas_nm3']
+        best_summary['total_gas_nm3'] = best_summary['net_gas_nm3'] + overhead_opt['total_overhead_gas_nm3']
+        best_summary['cum_gas_nm3'] = best_summary['total_gas_nm3'] if enable_overhead else best_summary['net_gas_nm3']
+        best_summary['gas_cost'] = best_summary['cum_gas_nm3'] * self.model.gas_price
+        best_summary['total_cost'] = best_summary['gas_cost'] + best_summary['dross_cost']
+
+        # Sankey diagrams calculation
         sankey_opt = self.model.calculate_sankey_energy_balance(
             cum_gas_nm3=best_summary['cum_gas_nm3'],
             cum_dross_kg=best_summary['cum_dross_kg'],
@@ -436,6 +495,7 @@ class HeatingCurveOptimizer:
         cost_savings_twd = summary_base['total_cost'] - best_summary['total_cost']
         cost_savings_pct = (cost_savings_twd / summary_base['total_cost']) * 100.0 if summary_base['total_cost'] > 0 else 0.0
         gas_savings_nm3 = summary_base['cum_gas_nm3'] - best_summary['cum_gas_nm3']
+        net_gas_savings_nm3 = summary_base['net_gas_nm3'] - best_summary['net_gas_nm3']
         dross_savings_kg = summary_base['cum_dross_kg'] - best_summary['cum_dross_kg']
         deadline_met = best_summary['final_bath_temp_c'] >= (target_bath_temp_c - 5.0)
 
@@ -501,6 +561,7 @@ class HeatingCurveOptimizer:
                 'cost_savings_twd': round(float(cost_savings_twd), 1),
                 'cost_savings_pct': round(float(cost_savings_pct), 2),
                 'gas_savings_nm3': round(float(gas_savings_nm3), 1),
+                'net_gas_savings_nm3': round(float(net_gas_savings_nm3), 1),
                 'dross_savings_kg': round(float(dross_savings_kg), 2),
             }
         }
@@ -511,3 +572,5 @@ if __name__ == '__main__':
     res = opt.optimize_heating_curve(65000.0, 6.0, alloy_name='5052')
     print("Optimal Params (5052):", res['optimal_params'])
     print("Savings (5052):", res['savings'])
+    print("Baseline Gas Total:", res['baseline_summary']['total_gas_nm3'], "Net:", res['baseline_summary']['net_gas_nm3'])
+    print("Optimal Gas Total:", res['optimal_summary']['total_gas_nm3'], "Net:", res['optimal_summary']['net_gas_nm3'])

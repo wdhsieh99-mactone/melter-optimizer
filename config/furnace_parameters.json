@@ -28,5 +28,13 @@
         "burnoff_ea": 45000.0,
         "burnoff_k0": 0.8583,
         "regen_base_eff": 0.74
+    },
+    "overhead": {
+        "enable_overhead": true,
+        "charge_door_open_mins": 60.0,
+        "dross_door_open_mins": 20.0,
+        "reversal_loss_pct": 4.0,
+        "refractory_reheat_gj": 7.0,
+        "actual_total_duration_hrs": 5.87
     }
 }

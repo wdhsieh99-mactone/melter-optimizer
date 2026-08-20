@@ -523,7 +523,17 @@ def main():
     baseline_roof_sp = base_sp1
     baseline_switch_hrs = dur1_hrs
 
-    st.sidebar.subheader("3. 能源與金屬價格")
+    st.sidebar.subheader("3. 現場工藝動態附加損耗 (Overhead)")
+    overhead_cfg = cfg.get('overhead', {})
+    with st.sidebar.expander("🚪 現場開門、蓄熱與換向損耗設定", expanded=False):
+        enable_overhead = st.checkbox("啟用現場全週期能耗校準 (Overhead)", value=bool(overhead_cfg.get('enable_overhead', True)), help="計入加料開門高溫輻射、耐火磚重新蓄熱、燒嘴換向吹掃未燃等現場工藝損耗，使每爐總燃耗對齊 115年 MFX 實測 ~72 Nm³/t。")
+        charge_door_mins = st.slider("加料大門開啟時長 (分鐘)", min_value=0.0, max_value=120.0, value=float(overhead_cfg.get('charge_door_open_mins', 60.0)), step=5.0)
+        dross_door_mins = st.slider("扒渣精煉開門時長 (分鐘)", min_value=0.0, max_value=60.0, value=float(overhead_cfg.get('dross_door_open_mins', 20.0)), step=5.0)
+        reversal_loss = st.slider("燒嘴換向吹掃未燃損失 (%)", min_value=0.0, max_value=10.0, value=float(overhead_cfg.get('reversal_loss_pct', 4.0)), step=0.5)
+        refractory_reheat = st.slider("耐火磚非穩態重新蓄熱 (GJ)", min_value=0.0, max_value=15.0, value=float(overhead_cfg.get('refractory_reheat_gj', 7.0)), step=0.5)
+        act_total_dur = st.number_input("全週期總時長 (含等待保溫, 小時)", min_value=3.0, max_value=15.0, value=float(overhead_cfg.get('actual_total_duration_hrs', 5.87)), step=0.2)
+
+    st.sidebar.subheader("4. 能源與金屬價格")
     gas_price = st.sidebar.number_input(
         "天然氣單價 (TWD / Nm³)", min_value=5.0, max_value=50.0,
         value=float(proc_cfg.get('gas_price', 15.0)), step=1.0
@@ -658,6 +668,12 @@ def main():
             'baseline_excess_air_pct': excess_air_pct,
             'target_bath_temp_c': target_bath_temp,
             'max_roof_sp_limit': max_roof_sp_limit,
+            'enable_overhead': enable_overhead,
+            'charge_door_open_mins': charge_door_mins,
+            'dross_door_open_mins': dross_door_mins,
+            'reversal_loss_pct': reversal_loss,
+            'refractory_reheat_gj': refractory_reheat,
+            'actual_total_duration_hrs': act_total_dur,
         }
 
         should_recalc = btn_calc_sidebar or btn_calc_main or ('opt_result' not in st.session_state)
@@ -702,6 +718,11 @@ def main():
         base_gas_per_t = base_sum['cum_gas_nm3'] / total_metal_tonnes if total_metal_tonnes > 0 else 0.0
         opt_gas_per_t = opt_sum['cum_gas_nm3'] / total_metal_tonnes if total_metal_tonnes > 0 else 0.0
         
+        base_net_nm3 = base_sum.get('net_gas_nm3', base_sum['cum_gas_nm3'])
+        base_ov_nm3 = base_sum.get('overhead_gas_nm3', 0.0)
+        opt_net_nm3 = opt_sum.get('net_gas_nm3', opt_sum['cum_gas_nm3'])
+        opt_ov_nm3 = opt_sum.get('overhead_gas_nm3', 0.0)
+        
         base_dross_pct = (base_sum['cum_dross_kg'] / charged_weight_kg) * 100.0 if charged_weight_kg > 0 else 0.0
         opt_dross_pct = (opt_sum['cum_dross_kg'] / charged_weight_kg) * 100.0 if charged_weight_kg > 0 else 0.0
 
@@ -735,9 +756,9 @@ def main():
             st.metric(
                 label="天然氣總耗量 (Nm³)",
                 value=f"{base_sum['cum_gas_nm3']:,.1f}",
-                help=f"天然氣單耗: {base_gas_per_t:.1f} Nm³/t"
+                help=f"天然氣單耗: {base_gas_per_t:.1f} Nm³/t (淨熔解: {base_net_nm3/total_metal_tonnes:.1f} + 工藝附加: {base_ov_nm3/total_metal_tonnes:.1f})"
             )
-            st.caption(f"📊 單耗: **{base_gas_per_t:.1f} Nm³/t**")
+            st.caption(f"📊 單耗: **{base_gas_per_t:.1f} Nm³/t**" if not enable_overhead else f"📊 總單耗: **{base_gas_per_t:.1f}** (淨: {base_net_nm3/total_metal_tonnes:.1f}+附加: {base_ov_nm3/total_metal_tonnes:.1f})")
         with b_col3:
             st.metric(
                 label="氧化燒損渣量 (kg)",
@@ -786,7 +807,7 @@ def main():
                 delta=f"-{savings['gas_savings_nm3']:,.1f} (-{gas_pct:.1f}%)",
                 delta_color="normal"
             )
-            st.caption(f"📊 單耗: **{opt_gas_per_t:.1f} Nm³/t**")
+            st.caption(f"📊 單耗: **{opt_gas_per_t:.1f} Nm³/t**" if not enable_overhead else f"📊 總單耗: **{opt_gas_per_t:.1f}** (淨: {opt_net_nm3/total_metal_tonnes:.1f}+附加: {opt_ov_nm3/total_metal_tonnes:.1f})")
         with o_col3:
             st.metric(
                 label="氧化燒損渣量 (kg)",
@@ -809,7 +830,8 @@ def main():
                 label="最佳 3 段階梯溫控 (°C)",
                 value=f"{opt_params['sp_roof_melt']:.0f} → {opt_params['sp_roof_soak']:.0f} → {opt_params['sp_roof_hold']:.0f}",
                 delta="3 段階梯控溫",
-                delta_color="off"
+                delta_color="off",
+                help=f"3 段階梯設點：主熔 {opt_params['sp_roof_melt']:.0f}°C → 平湯 {opt_params['sp_roof_soak']:.0f}°C → 保溫 {opt_params['sp_roof_hold']:.0f}°C"
             )
             if recipe_steps and len(recipe_steps) == 3:
                 st.caption(f"⏱️ 時段: **{recipe_steps[0]['duration_hhmm']} + {recipe_steps[1]['duration_hhmm']} + {recipe_steps[2]['duration_hhmm']}**")
@@ -818,7 +840,8 @@ def main():
                 label="過剩空氣率 (%)",
                 value=f"{opt_params['excess_air_pct']:.1f}",
                 delta=f"-{excess_air_pct - opt_params['excess_air_pct']:.1f}%",
-                delta_color="normal"
+                delta_color="normal",
+                help=f"最佳化空燃比設定：過剩空氣率 {opt_params['excess_air_pct']:.1f}%，對應煙道殘氧 {opt_params['flue_o2_pct']:.2f}% O₂"
             )
             st.caption(f"💨 煙道殘氧: **{opt_params['flue_o2_pct']:.2f}% O₂**")
 
@@ -826,14 +849,16 @@ def main():
         base_timing_str = f"00:00~{format_hours_to_hhmm(target_duration_hrs)} (1180°C 全火到底)" if dur1_hrs >= target_duration_hrs else f"00:00~{format_hours_to_hhmm(dur1_hrs)} (融化) → 轉湯溫保溫"
         base_sp_str = f"{base_sp1:.0f}°C 全火持續到底" if dur1_hrs >= target_duration_hrs else f"{base_sp1:.0f}°C (融化) → {base_sp3:.0f}°C (保溫)"
 
-        with st.expander("📋 點此展開「現行方案 vs. 最佳化」各項指標詳細對照表", expanded=True):
+        with st.expander("📋 點此展開「現行方案 vs. 最佳化」各項指標詳細對照表", expanded=False):
             df_compare = pd.DataFrame({
                 "指標項目 (Metric)": [
                     "每爐綜合生產成本 (Total Cost)",
                     "  └ 天然氣費用 (Gas Cost)",
                     "  └ 鋁金屬燒損損失 (Dross Metal Loss)",
-                    "天然氣總耗量 (Total Gas Consumption)",
-                    "天然氣單耗 (Specific Gas Consumption)",
+                    "天然氣全週期總耗量 (Total Gas Consumption)",
+                    "  └ 淨熔解理論耗氣 (Net Melting Gas)",
+                    "  └ 現場工藝附加損耗 (Overhead Losses)",
+                    "天然氣全週期單耗 (Specific Gas Consumption)",
                     "鋁錠氧化燒損量 (Dross Generated)",
                     "投料燒損率 (Dross Loss %)",
                     "平均溶解速率 (Melting Rate)",
@@ -848,6 +873,8 @@ def main():
                     f"${base_sum['gas_cost']:,.0f} TWD",
                     f"${base_sum['dross_cost']:,.0f} TWD",
                     f"{base_sum['cum_gas_nm3']:,.1f} Nm³",
+                    f"{base_net_nm3:,.1f} Nm³ ({base_net_nm3/total_metal_tonnes:.1f} Nm³/t)",
+                    f"{base_ov_nm3:,.1f} Nm³ ({base_ov_nm3/total_metal_tonnes:.1f} Nm³/t)",
                     f"{base_gas_per_t:.1f} Nm³/t",
                     f"{base_sum['cum_dross_kg']:.1f} kg",
                     f"{base_dross_pct:.2f}%",
@@ -1380,6 +1407,19 @@ def main():
                 s_burnoff_k0 = st.number_input("氧化速率指前係數 (k0)", min_value=0.001, max_value=2.0, value=float(phys_cfg.get('burnoff_k0', 0.8583)), step=0.01, format="%.4f", key="s_burnoff_k0", help="Arrhenius 氧化燒損速率指前常數 (現場校正值 0.8583)")
                 s_regen_eff = st.number_input("蓄熱陶瓷床基準回收效率", min_value=0.40, max_value=0.90, value=float(phys_cfg.get('regen_base_eff', 0.74)), step=0.02, key="s_regen_eff", help="陶瓷球蓄熱體煙氣餘熱回收效率 (預設 0.74)")
 
+            ov_cfg = cfg.get('overhead', {})
+            st.markdown("---")
+            st.markdown("#### 🚪 3. 現場工藝動態附加損耗常數 (Field Overhead Assumptions)")
+            col_ov1, col_ov2 = st.columns(2)
+            with col_ov1:
+                s_enable_ov = st.checkbox("預設啟用現場全週期工藝附加損耗校準", value=bool(ov_cfg.get('enable_overhead', True)), key="s_enable_ov", help="計入加料開門高溫輻射、耐火磚重新蓄熱、燒嘴換向吹掃未燃等現場工藝損耗，使每爐總燃耗對齊 115年 MFX 實測 ~72 Nm³/t。")
+                s_charge_door = st.number_input("預設加料大門開啟時長 (分鐘)", min_value=0.0, max_value=120.0, value=float(ov_cfg.get('charge_door_open_mins', 60.0)), step=5.0, key="s_charge_door")
+                s_dross_door = st.number_input("預設扒渣精煉開門時長 (分鐘)", min_value=0.0, max_value=60.0, value=float(ov_cfg.get('dross_door_open_mins', 20.0)), step=5.0, key="s_dross_door")
+            with col_ov2:
+                s_reversal_loss = st.number_input("預設換向吹掃未燃損失 (%)", min_value=0.0, max_value=10.0, value=float(ov_cfg.get('reversal_loss_pct', 4.0)), step=0.5, key="s_reversal_loss")
+                s_reheat_gj = st.number_input("預設耐火磚非穩態重新蓄熱 (GJ)", min_value=0.0, max_value=15.0, value=float(ov_cfg.get('refractory_reheat_gj', 7.0)), step=0.5, key="s_reheat_gj")
+                s_act_dur = st.number_input("預設全週期總時長 (含等待保溫, 小時)", min_value=3.0, max_value=15.0, value=float(ov_cfg.get('actual_total_duration_hrs', 5.87)), step=0.2, key="s_act_dur")
+
         if btn_save_form:
             updated_cfg = {
                 "process": {
@@ -1411,6 +1451,14 @@ def main():
                     "burnoff_ea": float(s_burnoff_ea),
                     "burnoff_k0": float(s_burnoff_k0),
                     "regen_base_eff": float(s_regen_eff),
+                },
+                "overhead": {
+                    "enable_overhead": bool(s_enable_ov),
+                    "charge_door_open_mins": float(s_charge_door),
+                    "dross_door_open_mins": float(s_dross_door),
+                    "reversal_loss_pct": float(s_reversal_loss),
+                    "refractory_reheat_gj": float(s_reheat_gj),
+                    "actual_total_duration_hrs": float(s_act_dur),
                 }
             }
             save_app_config(updated_cfg)

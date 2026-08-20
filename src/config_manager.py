@@ -42,6 +42,15 @@ DEFAULT_APP_CONFIG: Dict[str, Any] = {
         "burnoff_ea": 45000.0,
         "burnoff_k0": 0.8583,
         "regen_base_eff": 0.74,
+    },
+    # 3. 現場工藝動態附加損耗 (Field Operational Overhead Losses)
+    "overhead": {
+        "enable_overhead": True,
+        "charge_door_open_mins": 60.0,
+        "dross_door_open_mins": 20.0,
+        "reversal_loss_pct": 4.0,
+        "refractory_reheat_gj": 7.0,
+        "actual_total_duration_hrs": 5.87,
     }
 }
 
@@ -69,6 +78,8 @@ def load_app_config() -> Dict[str, Any]:
             merged_cfg['process'].update(cfg['process'])
         if 'physics' in cfg:
             merged_cfg['physics'].update(cfg['physics'])
+        if 'overhead' in cfg:
+            merged_cfg['overhead'].update(cfg['overhead'])
         return merged_cfg
     except Exception as e:
         print(f"Warning: Failed to load config from {CONFIG_FILE_PATH}: {e}. Using defaults.")

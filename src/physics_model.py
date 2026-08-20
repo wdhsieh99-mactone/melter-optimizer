@@ -316,6 +316,91 @@ class MelterPhysicsModel:
             'total_flue_loss_pct': total_flue_loss_pct,
         }
 
+    def calculate_field_overhead_losses(
+        self,
+        charged_weight_kg: float,
+        net_melt_gas_nm3: float,
+        target_duration_hrs: float = 5.0,
+        actual_total_duration_hrs: Optional[float] = None,
+        charge_door_open_mins: float = 60.0,
+        dross_door_open_mins: float = 20.0,
+        reversal_loss_pct: float = 4.0,
+        refractory_reheat_gj: float = 7.0,
+        door_area_m2: float = 7.0,
+        chamber_temp_c: float = 1000.0,
+        ambient_temp_c: float = 30.0,
+        enable_overhead: bool = True,
+    ) -> Dict[str, float]:
+        """Computes field dynamic operational overhead losses (door open radiation, refractory transient
+        reheat, burner reversal purging, drossing door open, and extended holding waiting for caster).
+        Aligns the thermodynamic model with China Steel Aluminium plant records (115年 MFX ~72 Nm³/t).
+        """
+        if not enable_overhead:
+            return {
+                'q_door_charge_gj': 0.0,
+                'gas_door_charge_nm3': 0.0,
+                'q_door_dross_gj': 0.0,
+                'gas_door_dross_nm3': 0.0,
+                'q_refractory_reheat_gj': 0.0,
+                'gas_refractory_nm3': 0.0,
+                'gas_reversal_purge_nm3': 0.0,
+                'gas_holding_extended_nm3': 0.0,
+                'total_overhead_gas_nm3': 0.0,
+                'total_overhead_gj': 0.0,
+                'specific_overhead_nm3_t': 0.0,
+            }
+        
+        sigma = 5.670374e-8  # W / (m^2 * K^4)
+        t_furnace_k = chamber_temp_c + 273.15
+        t_amb_k = ambient_temp_c + 273.15
+        emissivity = 0.85
+        
+        # 1. Charging door open radiation loss (GJ & Nm³)
+        q_rad_w_m2 = sigma * emissivity * (t_furnace_k**4 - t_amb_k**4)
+        q_door_charge_watts = q_rad_w_m2 * door_area_m2
+        q_door_charge_gj = (q_door_charge_watts * (charge_door_open_mins * 60.0)) / 1e9
+        gas_door_charge_nm3 = (q_door_charge_gj * 1e6) / self.GAS_LHV
+        
+        # 2. Drossing / fluxing / sampling door open loss (GJ & Nm³)
+        dross_door_area_m2 = min(2.5, door_area_m2 * 0.35)
+        q_door_dross_watts = q_rad_w_m2 * dross_door_area_m2
+        q_door_dross_gj = (q_door_dross_watts * (dross_door_open_mins * 60.0)) / 1e9
+        gas_door_dross_nm3 = (q_door_dross_gj * 1e6) / self.GAS_LHV
+        
+        # 3. Refractory transient storage reheat (GJ & Nm³)
+        gas_refractory_nm3 = (refractory_reheat_gj * 1e6) / self.GAS_LHV
+        
+        # 4. Burner reversal valve switching purge unburnt gas loss (Nm³)
+        gas_reversal_purge_nm3 = net_melt_gas_nm3 * (reversal_loss_pct / 100.0)
+        
+        # 5. Extended holding waiting for caster (Nm³)
+        act_dur = actual_total_duration_hrs if actual_total_duration_hrs is not None else target_duration_hrs
+        extra_hold_hrs = max(0.0, act_dur - target_duration_hrs)
+        gas_holding_extended_nm3 = extra_hold_hrs * 60.0
+        
+        total_overhead_gas_nm3 = (
+            gas_door_charge_nm3 + gas_door_dross_nm3 + gas_refractory_nm3
+            + gas_reversal_purge_nm3 + gas_holding_extended_nm3
+        )
+        total_overhead_gj = (total_overhead_gas_nm3 * self.GAS_LHV) / 1e6
+        
+        charged_t = max(0.01, charged_weight_kg / 1000.0)
+        specific_overhead_nm3_t = total_overhead_gas_nm3 / charged_t
+        
+        return {
+            'q_door_charge_gj': q_door_charge_gj,
+            'gas_door_charge_nm3': gas_door_charge_nm3,
+            'q_door_dross_gj': q_door_dross_gj,
+            'gas_door_dross_nm3': gas_door_dross_nm3,
+            'q_refractory_reheat_gj': refractory_reheat_gj,
+            'gas_refractory_nm3': gas_refractory_nm3,
+            'gas_reversal_purge_nm3': gas_reversal_purge_nm3,
+            'gas_holding_extended_nm3': gas_holding_extended_nm3,
+            'total_overhead_gas_nm3': total_overhead_gas_nm3,
+            'total_overhead_gj': total_overhead_gj,
+            'specific_overhead_nm3_t': specific_overhead_nm3_t,
+        }
+
 
 if __name__ == '__main__':
     model = MelterPhysicsModel()

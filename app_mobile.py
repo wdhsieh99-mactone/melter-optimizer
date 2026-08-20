@@ -258,6 +258,15 @@ def main():
             target_bath_temp = st.number_input("目標出湯湯溫 (°C)", min_value=700.0, max_value=800.0, value=float(proc_cfg.get('target_bath_temp_c', 780.0)), step=10.0)
             max_roof_sp_limit = st.slider("頂溫上限安全天花板 (°C)", min_value=1100.0, max_value=1250.0, value=float(proc_cfg.get('max_roof_sp_limit', 1200.0)), step=10.0)
 
+            ov_cfg = cfg.get('overhead', {})
+            st.markdown("---")
+            enable_overhead = st.checkbox("啟用現場全週期能耗校準 (Overhead)", value=bool(ov_cfg.get('enable_overhead', True)), help="計入加料開門高溫輻射、耐火磚重新蓄熱、燒嘴換向吹掃未燃等現場工藝損耗，使每爐總燃耗對齊 115年 MFX 實測 ~72 Nm³/t。")
+            charge_door_mins = st.slider("加料開門時長 (min)", min_value=0.0, max_value=120.0, value=float(ov_cfg.get('charge_door_open_mins', 60.0)), step=5.0)
+            dross_door_mins = st.slider("扒渣開門時長 (min)", min_value=0.0, max_value=60.0, value=float(ov_cfg.get('dross_door_open_mins', 20.0)), step=5.0)
+            reversal_loss = st.slider("換向吹掃未燃損失 (%)", min_value=0.0, max_value=10.0, value=float(ov_cfg.get('reversal_loss_pct', 4.0)), step=0.5)
+            refractory_reheat = st.slider("耐火磚重新蓄熱 (GJ)", min_value=0.0, max_value=15.0, value=float(ov_cfg.get('refractory_reheat_gj', 7.0)), step=0.5)
+            act_total_dur = st.number_input("全週期總時長 (h)", min_value=3.0, max_value=15.0, value=float(ov_cfg.get('actual_total_duration_hrs', 5.87)), step=0.2)
+
     dur1_hrs = parse_hhmm_to_hours(base_dur1_str, default=target_hrs)
     dur2_hrs = parse_hhmm_to_hours(base_dur2_str, default=0.0)
     charged_weight_kg = charged_tonnes * 1000.0
@@ -278,6 +287,12 @@ def main():
         'baseline_excess_air_pct': excess_air_pct,
         'target_bath_temp_c': target_bath_temp,
         'max_roof_sp_limit': max_roof_sp_limit,
+        'enable_overhead': enable_overhead,
+        'charge_door_open_mins': charge_door_mins,
+        'dross_door_open_mins': dross_door_mins,
+        'reversal_loss_pct': reversal_loss,
+        'refractory_reheat_gj': refractory_reheat,
+        'actual_total_duration_hrs': act_total_dur,
     }
 
     if btn_calc or ('m_opt_res' not in st.session_state):
@@ -305,6 +320,11 @@ def main():
     base_gas_per_t = base_sum['cum_gas_nm3'] / total_metal_tonnes if total_metal_tonnes > 0 else 0.0
     opt_gas_per_t = opt_sum['cum_gas_nm3'] / total_metal_tonnes if total_metal_tonnes > 0 else 0.0
     
+    base_net_nm3 = base_sum.get('net_gas_nm3', base_sum['cum_gas_nm3'])
+    base_ov_nm3 = base_sum.get('overhead_gas_nm3', 0.0)
+    opt_net_nm3 = opt_sum.get('net_gas_nm3', opt_sum['cum_gas_nm3'])
+    opt_ov_nm3 = opt_sum.get('overhead_gas_nm3', 0.0)
+
     base_dross_pct = (base_sum['cum_dross_kg'] / charged_weight_kg) * 100.0 if charged_weight_kg > 0 else 0.0
     opt_dross_pct = (opt_sum['cum_dross_kg'] / charged_weight_kg) * 100.0 if charged_weight_kg > 0 else 0.0
 
@@ -381,9 +401,9 @@ def main():
         st.metric(
             label="天然氣總耗量 (Nm³)",
             value=f"{base_sum['cum_gas_nm3']:,.1f}",
-            help=f"天然氣單耗: {base_gas_per_t:.1f} Nm³/t"
+            help=f"天然氣單耗: {base_gas_per_t:.1f} Nm³/t (淨熔解: {base_net_nm3/total_metal_tonnes:.1f} + 工藝附加: {base_ov_nm3/total_metal_tonnes:.1f})"
         )
-        st.caption(f"📊 單耗: **{base_gas_per_t:.1f} Nm³/t**")
+        st.caption(f"📊 單耗: **{base_gas_per_t:.1f} Nm³/t**" if not enable_overhead else f"📊 總單耗: **{base_gas_per_t:.1f}** (淨: {base_net_nm3/total_metal_tonnes:.1f}+附加: {base_ov_nm3/total_metal_tonnes:.1f})")
         base_mode_val = f"{base_sp1:.0f} °C" if dur1_hrs >= target_hrs else f"{base_sp1:.0f} → {base_sp3:.0f} °C"
         st.metric(
             label="溫控設點模式 (°C)",
@@ -430,7 +450,7 @@ def main():
             delta_color="normal",
             help=f"最佳化天然氣單耗: {opt_gas_per_t:.1f} Nm³/t (下降 {base_gas_per_t - opt_gas_per_t:.1f} Nm³/t)"
         )
-        st.caption(f"📊 單耗: **{opt_gas_per_t:.1f} Nm³/t** (降 {base_gas_per_t - opt_gas_per_t:.1f})")
+        st.caption(f"📊 單耗: **{opt_gas_per_t:.1f} Nm³/t**" if not enable_overhead else f"📊 總單耗: **{opt_gas_per_t:.1f}** (淨: {opt_net_nm3/total_metal_tonnes:.1f}+附加: {opt_ov_nm3/total_metal_tonnes:.1f})")
         st.metric(
             label="最佳 3 段階梯溫控 (°C)",
             value=f"{opt_params['sp_roof_melt']:.0f} → {opt_params['sp_roof_soak']:.0f} → {opt_params['sp_roof_hold']:.0f}",
@@ -476,8 +496,10 @@ def main():
                 "每爐綜合生產成本 (Total Cost)",
                 "  └ 天然氣費用 (Gas Cost)",
                 "  └ 鋁金屬燒損損失 (Dross Metal Loss)",
-                "天然氣總耗量 (Total Gas Consumption)",
-                "天然氣單耗 (Specific Gas Consumption)",
+                "天然氣全週期總耗量 (Total Gas Consumption)",
+                "  └ 淨熔解理論耗氣 (Net Melting Gas)",
+                "  └ 現場工藝附加損耗 (Overhead Losses)",
+                "天然氣全週期單耗 (Specific Gas Consumption)",
                 "鋁錠氧化燒損量 (Dross Generated)",
                 "投料燒損率 (Dross Loss %)",
                 "平均溶解速率 (Melting Rate)",
@@ -492,6 +514,8 @@ def main():
                 f"${base_sum['gas_cost']:,.0f} TWD",
                 f"${base_sum['dross_cost']:,.0f} TWD",
                 f"{base_sum['cum_gas_nm3']:,.1f} Nm³",
+                f"{base_net_nm3:,.1f} Nm³ ({base_net_nm3/total_metal_tonnes:.1f} Nm³/t)",
+                f"{base_ov_nm3:,.1f} Nm³ ({base_ov_nm3/total_metal_tonnes:.1f} Nm³/t)",
                 f"{base_gas_per_t:.1f} Nm³/t",
                 f"{base_sum['cum_dross_kg']:.1f} kg",
                 f"{base_dross_pct:.2f}%",
@@ -507,6 +531,8 @@ def main():
                 f"${opt_sum['gas_cost']:,.0f} TWD",
                 f"${opt_sum['dross_cost']:,.0f} TWD",
                 f"{opt_sum['cum_gas_nm3']:,.1f} Nm³",
+                f"{opt_net_nm3:,.1f} Nm³ ({opt_net_nm3/total_metal_tonnes:.1f} Nm³/t)",
+                f"{opt_ov_nm3:,.1f} Nm³ ({opt_ov_nm3/total_metal_tonnes:.1f} Nm³/t)",
                 f"{opt_gas_per_t:.1f} Nm³/t",
                 f"{opt_sum['cum_dross_kg']:.1f} kg",
                 f"{opt_dross_pct:.2f}%",
@@ -522,6 +548,8 @@ def main():
                 f"節省 -${base_sum['gas_cost'] - opt_sum['gas_cost']:,.0f} (-{((base_sum['gas_cost'] - opt_sum['gas_cost'])/base_sum['gas_cost']*100) if base_sum['gas_cost']>0 else 0:.1f}%)",
                 f"減少 -${base_sum['dross_cost'] - opt_sum['dross_cost']:,.0f} (-{((base_sum['dross_cost'] - opt_sum['dross_cost'])/base_sum['dross_cost']*100) if base_sum['dross_cost']>0 else 0:.1f}%)",
                 f"節約 -{savings['gas_savings_nm3']:,.1f} Nm³ (-{gas_pct:.1f}%)",
+                f"節約 -{savings.get('net_gas_savings_nm3', savings['gas_savings_nm3']):,.1f} Nm³ (淨熔解省氣)",
+                f"換向與保溫連鎖節約 -{base_ov_nm3 - opt_ov_nm3:.1f} Nm³",
                 f"下降 -{base_gas_per_t - opt_gas_per_t:.1f} Nm³/t (-{gas_pct:.1f}%)",
                 f"減少 -{savings['dross_savings_kg']:.1f} kg (-{dross_pct:.1f}%)",
                 f"降低 -{base_dross_pct - opt_dross_pct:.2f} 個百分點",
