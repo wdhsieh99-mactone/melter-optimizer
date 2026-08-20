@@ -239,8 +239,12 @@ class HeatingCurveOptimizer:
             dross_step_kg = min(dross_rate_kghr * dt_hrs, max(0.0, max_dross_kg - cumulative_dross_kg))
             cumulative_dross_kg += dross_step_kg
             
-            # Bath state progression
-            current_energy_kj += q_step_kj
+            # Oxidation exothermic heat released directly into molten bath (kJ)
+            # 4 Al + 3 O2 -> 2 Al2O3 releases ~31.05 MJ/kg Al oxidized (~31050 kJ/kg); dross is ~60% Al oxidized
+            q_ox_step_kj = (dross_step_kg * 0.60 * 31050.0)
+            
+            # Bath state progression (combustion net heat + oxidation exothermic heat)
+            current_energy_kj += (q_step_kj + q_ox_step_kj)
             current_bath_temp = energy_to_bath_temp(current_energy_kj)
 
             times.append(t_hr)

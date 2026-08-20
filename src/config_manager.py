@@ -22,6 +22,7 @@ DEFAULT_APP_CONFIG: Dict[str, Any] = {
         "excess_air_pct": 40.0,
         "gas_price": 15.0,
         "aluminum_price": 75.0,
+        "dross_net_loss_factor": 0.40,
         "baseline_sp1": 1180.0,
         "baseline_dur1_hhmm": "04:30",
         "baseline_sp2": 800.0,

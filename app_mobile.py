@@ -227,6 +227,7 @@ def main():
         wall_loss_kw=float(phys_cfg.get('wall_loss_kw', 250.0)),
         hearth_loss_ref_kw=float(phys_cfg.get('hearth_loss_ref_kw', 85.0)),
         dross_factor_flat=float(phys_cfg.get('dross_factor_flat', 0.70)),
+        dross_net_loss_factor=float(proc_cfg.get('dross_net_loss_factor', 0.40)),
         emissivity_eff=float(phys_cfg.get('emissivity_eff', 0.85)),
         gas_lhv_kj_nm3=float(phys_cfg.get('gas_lhv_kj_nm3', 37256.0)),
         burnoff_ea=float(phys_cfg.get('burnoff_ea', 45000.0)),

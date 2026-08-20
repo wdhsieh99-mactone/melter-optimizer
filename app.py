@@ -351,6 +351,7 @@ def get_optimizer_and_evaluator(cfg: dict = None):
             hearth_area_m2=p_cfg.get('hearth_area_m2', 66.15),
             hearth_loss_ref_kw=p_cfg.get('hearth_loss_ref_kw', 85.0),
             dross_factor_flat=p_cfg.get('dross_factor_flat', 0.70),
+            dross_net_loss_factor=proc_cfg.get('dross_net_loss_factor', 0.40),
             gas_lhv=p_cfg.get('gas_lhv_kj_nm3', 37256.0),
             regen_base_eff=p_cfg.get('regen_base_eff', 0.74),
         )
@@ -368,6 +369,7 @@ def get_optimizer_and_evaluator(cfg: dict = None):
     model.HEARTH_AREA_M2 = float(p_cfg.get('hearth_area_m2', 66.15))
     model.hearth_loss_ref_kw = float(p_cfg.get('hearth_loss_ref_kw', 85.0))
     model.dross_factor_flat = float(p_cfg.get('dross_factor_flat', 0.70))
+    model.dross_net_loss_factor = float(proc_cfg.get('dross_net_loss_factor', 0.40))
     model.GAS_LHV = float(p_cfg.get('gas_lhv_kj_nm3', 37256.0))
     model.regen_base_eff = float(p_cfg.get('regen_base_eff', 0.74))
     model.gas_price = float(proc_cfg.get('gas_price', 15.0))
@@ -1444,6 +1446,7 @@ def main():
                 st.markdown("##### 經濟與成本參數 (Economic Parameters)")
                 s_gas_price = st.number_input("天然氣單價 (TWD/Nm³)", min_value=5.0, max_value=50.0, value=float(proc_cfg.get('gas_price', 15.0)), step=1.0, key="s_gas_price")
                 s_al_price = st.number_input("鋁錠/金屬單價 (TWD/kg)", min_value=30.0, max_value=150.0, value=float(proc_cfg.get('aluminum_price', 75.0)), step=5.0, key="s_al_price")
+                s_dross_net_factor = st.number_input("白渣金屬損失折減係數 (Net Loss Factor)", min_value=0.10, max_value=1.00, value=float(proc_cfg.get('dross_net_loss_factor', 0.40)), step=0.05, key="s_dross_net_factor", help="扣除壓渣機與回收爐回收 50~70% 原鋁後之淨損失比例 (預設 0.40 = 40% 原鋁價)")
 
             with col_s2:
                 st.markdown("#### 🔬 2. 熱力學與爐體內部物理假設常數 (Physics Assumptions)")
@@ -1489,6 +1492,7 @@ def main():
                     "excess_air_pct": float(s_excess_air),
                     "gas_price": float(s_gas_price),
                     "aluminum_price": float(s_al_price),
+                    "dross_net_loss_factor": float(s_dross_net_factor),
                     "baseline_sp1": float(s_base_sp1),
                     "baseline_dur1_hhmm": str(s_base_dur1),
                     "baseline_sp2": float(s_base_sp2),

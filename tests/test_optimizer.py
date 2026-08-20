@@ -260,3 +260,23 @@ def test_closed_loop_roof_temperature_throttled_by_gas_limit():
     assert df_limited['bath_temp_c'].iloc[-1] < df_normal['bath_temp_c'].iloc[-1]
 
 
+def test_phase2_dross_net_loss_factor():
+    model = MelterPhysicsModel(aluminum_price=75.0, dross_net_loss_factor=0.40)
+    costs = model.compute_heat_cost(gas_nm3=1000.0, dross_kg=500.0)
+    assert costs['dross_cost_gross'] == 500.0 * 75.0 # 37500
+    assert costs['dross_cost'] == 500.0 * 75.0 * 0.40 # 15000
+    assert costs['dross_net_loss_factor'] == 0.40
+
+
+def test_phase2_combustion_efficiency_gradient():
+    model = MelterPhysicsModel(efficiency_scale=1.0)
+    eff_low_temp = model.combustion_efficiency(750.0, excess_air_pct=15.0)
+    eff_mid_temp = model.combustion_efficiency(950.0, excess_air_pct=15.0)
+    eff_high_temp = model.combustion_efficiency(1150.0, excess_air_pct=15.0)
+    # Higher furnace temperature must have lower combustion efficiency due to hotter exhaust flue gas
+    assert eff_low_temp > eff_mid_temp > eff_high_temp
+    assert 0.50 <= eff_high_temp <= 0.78
+    assert 0.50 <= eff_low_temp <= 0.78
+
+
+

@@ -108,6 +108,7 @@ class MelterPhysicsModel:
         hearth_area_m2: Optional[float] = None,
         hearth_loss_ref_kw: Optional[float] = None,
         dross_factor_flat: Optional[float] = None,
+        dross_net_loss_factor: Optional[float] = None,
         gas_lhv: Optional[float] = None,
         regen_base_eff: Optional[float] = None,
         **kwargs
@@ -125,6 +126,7 @@ class MelterPhysicsModel:
         self.HEARTH_AREA_M2 = hearth_area_m2 if hearth_area_m2 is not None else calibrated.get('hearth_area_m2', HEARTH_AREA_M2)
         self.hearth_loss_ref_kw = hearth_loss_ref_kw if hearth_loss_ref_kw is not None else 85.0
         self.dross_factor_flat = dross_factor_flat if dross_factor_flat is not None else 0.70
+        self.dross_net_loss_factor = dross_net_loss_factor if dross_net_loss_factor is not None else calibrated.get('dross_net_loss_factor', 0.40)
         if gas_lhv is not None:
             self.GAS_LHV = gas_lhv
         self.regen_base_eff = regen_base_eff if regen_base_eff is not None else 0.74
@@ -181,8 +183,9 @@ class MelterPhysicsModel:
 
         # Excess air dilution penalty: higher excess air reduces flame temperature and increases flue gas volume
         excess_air_penalty = (excess_air_pct - 15.0) * 0.004
-        eff = (base_eff - excess_air_penalty) * self.efficiency_scale
-        return max(0.32, min(0.68, eff))
+        base_net = max(0.35, min(0.75, base_eff - excess_air_penalty))
+        eff = base_net * self.efficiency_scale
+        return max(0.32, min(0.78, eff))
 
     def calculate_flue_oxygen_pct(self, excess_air_pct: float = 15.0) -> float:
         """Estimates flue gas oxygen percentage based on excess air ratio."""
@@ -234,13 +237,15 @@ class MelterPhysicsModel:
         return min(MAX_PLAUSIBLE_DROSS_RATE_KG_HR, max(0.1, rate))
 
     def compute_heat_cost(self, gas_nm3: float, dross_kg: float) -> Dict[str, float]:
-        """Calculates cost breakdown (TWD)."""
+        """Calculates cost breakdown (TWD) accounting for metal recovery from dross."""
         gas_cost = gas_nm3 * self.gas_price
-        dross_cost = dross_kg * self.aluminum_price
+        dross_cost = dross_kg * self.aluminum_price * self.dross_net_loss_factor
         total_cost = gas_cost + dross_cost
         return {
             'gas_cost': gas_cost,
             'dross_cost': dross_cost,
+            'dross_cost_gross': dross_kg * self.aluminum_price,
+            'dross_net_loss_factor': self.dross_net_loss_factor,
             'total_cost': total_cost
         }
 
