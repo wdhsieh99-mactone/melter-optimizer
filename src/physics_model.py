@@ -420,7 +420,11 @@ class MelterPhysicsModel:
         # 5. Extended holding waiting for caster (Nm³)
         act_dur = actual_total_duration_hrs if actual_total_duration_hrs is not None else target_duration_hrs
         extra_hold_hrs = max(0.0, act_dur - target_duration_hrs)
-        gas_holding_extended_nm3 = extra_hold_hrs * 60.0
+        # Physical holding power: maintains steady-state wall loss and draft opening at holding temperature
+        holding_eff = self.combustion_efficiency(780.0, excess_air_pct=15.0)
+        holding_kw = self.wall_loss_kw + 20.0  # steady-state wall loss + draft loss
+        holding_gas_rate_nm3h = (holding_kw * 3600.0) / (holding_eff * self.GAS_LHV) if self.GAS_LHV > 0 else 40.0
+        gas_holding_extended_nm3 = extra_hold_hrs * holding_gas_rate_nm3h
         
         total_overhead_gas_nm3 = (
             gas_door_charge_nm3 + gas_door_dross_nm3 + gas_refractory_nm3

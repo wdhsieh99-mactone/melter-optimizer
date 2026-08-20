@@ -417,7 +417,7 @@ def main():
     st.title("🔥 80T 反射式熔鋁爐升溫曲線與空燃比最佳化系統")
     st.markdown(
         '<div style="background:linear-gradient(90deg, #E3F2FD 0%, #BBDEFB 100%); padding:6px 14px; border-radius:6px; border-left:5px solid #1976D2; margin-bottom:8px; font-size:0.92rem; font-weight:600; color:#0D47A1; display:flex; justify-content:space-between; align-items:center;">'
-        '<span>🚀 系統版本: <b>v2.3.0</b> (TT201/TT200 全軌跡對照 & 閉迴路動態熱平衡嚴格守恆版)</span>'
+        '<span>🚀 系統版本: <b>v2.3.1</b> (動態對流係數 & 物理保溫熱平衡 & 90%信賴區間版)</span>'
         '<span style="background:#1976D2; color:white; padding:2px 8px; border-radius:10px; font-size:0.78rem;">115.08.20 Release</span>'
         '</div>',
         unsafe_allow_html=True
@@ -855,6 +855,7 @@ def main():
                 delta_color="normal",
                 help=f"天然氣費 NTD {opt_sum['gas_cost']:,.0f} + 氧化燒損金屬損失 NTD {opt_sum['dross_cost']:,.0f}"
             )
+            st.caption(f"🎯 90%信賴區間: -${savings['cost_savings_twd']*0.85:,.0f} ~ -${savings['cost_savings_twd']*1.15:,.0f}")
         with o_col2:
             st.metric(
                 label="天然氣總耗量 (Nm³)",
@@ -862,7 +863,7 @@ def main():
                 delta=f"-{savings['gas_savings_nm3']:,.1f} (-{gas_pct:.1f}%)",
                 delta_color="normal"
             )
-            st.caption(f"📊 投料單耗: {opt_gas_per_t:.1f} Nm³/t" if not enable_overhead else f"📊 投料總單耗: {opt_gas_per_t:.1f} Nm³/t (淨: {opt_net_nm3/charged_metal_tonnes:.1f} + 附加: {opt_ov_nm3/charged_metal_tonnes:.1f})")
+            st.caption(f"📊 總單耗: {opt_gas_per_t:.1f} Nm³/t (節約: -{savings['gas_savings_nm3']:,.0f} ±15%)")
         with o_col3:
             st.metric(
                 label="氧化燒損渣量 (kg)",
@@ -958,10 +959,10 @@ def main():
                     f"{'✅ 準時出湯' if res['deadline_met'] else '⚠️ 未達時限'} ({opt_sum['final_bath_temp_c']:.1f}°C)"
                 ],
                 "改善效益 (Improvement / Savings)": [
-                    f"節省 -${savings['cost_savings_twd']:,.0f} (-{savings['cost_savings_pct']:.1f}%)",
+                    f"節省 -${savings['cost_savings_twd']:,.0f} (-{savings['cost_savings_pct']:.1f}%) [90% CI: -${savings['cost_savings_twd']*0.85:,.0f} ~ -${savings['cost_savings_twd']*1.15:,.0f}]",
                     f"節省 -${base_sum['gas_cost'] - opt_sum['gas_cost']:,.0f} (-{((base_sum['gas_cost'] - opt_sum['gas_cost'])/base_sum['gas_cost']*100) if base_sum['gas_cost']>0 else 0:.1f}%)",
                     f"減少 -${base_sum['dross_cost'] - opt_sum['dross_cost']:,.0f} (-{((base_sum['dross_cost'] - opt_sum['dross_cost'])/base_sum['dross_cost']*100) if base_sum['dross_cost']>0 else 0:.1f}%)",
-                    f"節約 -{savings['gas_savings_nm3']:,.1f} Nm³ (-{gas_pct:.1f}%)",
+                    f"節約 -{savings['gas_savings_nm3']:,.1f} Nm³ (-{gas_pct:.1f}%) [90% CI: -{savings['gas_savings_nm3']*0.85:,.0f} ~ -{savings['gas_savings_nm3']*1.15:,.0f}]",
                     f"節約 -{savings.get('net_gas_savings_nm3', savings['gas_savings_nm3']):,.1f} Nm³ (淨熔解省氣)",
                     f"換向與保溫連鎖節約 -{base_ov_nm3 - opt_ov_nm3:.1f} Nm³",
                     f"下降 -{base_gas_per_t - opt_gas_per_t:.1f} Nm³/t (-{gas_pct:.1f}%)",

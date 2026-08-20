@@ -171,9 +171,12 @@ class HeatingCurveOptimizer:
             
             is_flat_bath = (current_bath_temp >= liquidus)
 
-            # Heat transfer between target roof space and bath (Radiant + Convection - Hearth Loss)
+            # Heat transfer between target roof space and bath (Radiant + Dynamic Convection - Hearth Loss)
+            h_base = 0.010 if is_flat_bath else 0.015
+            temp_drive_ratio = min(1.0, max(0.1, (roof_target_step - current_bath_temp) / 500.0))
+            h_conv_target = h_base * (0.40 + 0.60 * temp_drive_ratio)
             q_rad_target_kw = self.model.radiant_heat_flux_kw(roof_target_step, current_bath_temp, is_flat_bath=is_flat_bath)
-            q_conv_target_kw = 1.2 * self.model.HEARTH_AREA_M2 * (roof_target_step - current_bath_temp) * (0.010 if is_flat_bath else 0.015)
+            q_conv_target_kw = 1.2 * self.model.HEARTH_AREA_M2 * (roof_target_step - current_bath_temp) * h_conv_target
             q_hearth_loss_kw = self.model.bath_bottom_loss_kw(current_bath_temp)
             q_net_to_bath_target_kw = q_rad_target_kw + q_conv_target_kw - q_hearth_loss_kw
             
@@ -201,6 +204,9 @@ class HeatingCurveOptimizer:
                 q_combustion_actual_kw = (gas_flow_nm3h * self.model.GAS_LHV) / 3600.0 if self.model.GAS_LHV > 0 else 0.0
                 q_net_avail_chamber_kw = max(0.0, (q_combustion_actual_kw - self.model.wall_loss_kw) * eff)
                 
+                # Convective heat transfer scaled with actual burner firing gas velocity
+                h_conv_actual = h_base * (0.40 + 0.60 * min(1.0, gas_flow_nm3h / max_gas_limit))
+                
                 # Closed-Loop Feedback: If burner firing rate is saturated, roof temperature rise is throttled by available power
                 if gas_flow_unclamp > max_gas_limit:
                     power_deficit_kw = (q_rad_target_kw + q_conv_target_kw) - q_net_avail_chamber_kw
@@ -209,11 +215,12 @@ class HeatingCurveOptimizer:
                     
                     # Recalculate heat transfer at physical roof temperature
                     q_rad_actual_kw = self.model.radiant_heat_flux_kw(current_roof_temp, current_bath_temp, is_flat_bath=is_flat_bath)
-                    q_conv_actual_kw = 1.2 * self.model.HEARTH_AREA_M2 * (current_roof_temp - current_bath_temp) * (0.010 if is_flat_bath else 0.015)
+                    q_conv_actual_kw = 1.2 * self.model.HEARTH_AREA_M2 * (current_roof_temp - current_bath_temp) * h_conv_actual
                     q_bath_actual_kw = max(0.0, min(q_net_avail_chamber_kw, q_rad_actual_kw + q_conv_actual_kw) - q_hearth_loss_kw)
                 else:
                     current_roof_temp = roof_target_step
-                    q_bath_actual_kw = min(q_net_to_bath_target_kw, q_net_avail_chamber_kw - q_hearth_loss_kw)
+                    q_conv_actual_kw = 1.2 * self.model.HEARTH_AREA_M2 * (current_roof_temp - current_bath_temp) * h_conv_actual
+                    q_bath_actual_kw = min(q_rad_target_kw + q_conv_actual_kw - q_hearth_loss_kw, q_net_avail_chamber_kw - q_hearth_loss_kw)
             else:
                 # Bath is hotter than roof/loss -> cool down
                 current_roof_temp = roof_target_step
