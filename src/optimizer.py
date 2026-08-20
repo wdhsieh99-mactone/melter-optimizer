@@ -381,40 +381,36 @@ class HeatingCurveOptimizer:
         
         t_sw1_grid = np.linspace(discharge_deadline_hrs * 0.40, discharge_deadline_hrs * 0.70, 5)
         sp_soaks = [950.0, 1000.0, 1050.0]
-        soak_durations = [0.6, 1.0, 1.4, 1.8]
         sp_holds = [750.0, 780.0]
         excess_airs = [10.0, 12.5, 15.0, baseline_excess_air_pct]
 
         for sp_m in sp_melts:
             for t_sw1 in t_sw1_grid:
                 for sp_soak in sp_soaks:
-                    for soak_dur in soak_durations:
-                        t_sw2 = min(discharge_deadline_hrs * 0.90, t_sw1 + soak_dur)
-                        if t_sw2 <= t_sw1:
-                            continue
-                        for sp_h in sp_holds:
-                            for ex_air in excess_airs:
-                                df_sim, summary = self.simulate_trajectory(
-                                    charged_weight_kg=charged_weight_kg,
-                                    target_duration_hrs=discharge_deadline_hrs,
-                                    sp_roof_melt=sp_m,
-                                    t_switch_hrs=t_sw1,
-                                    sp_roof_soak=sp_soak,
-                                    t_soak_end_hrs=t_sw2,
-                                    sp_roof_hold=sp_h,
-                                    alloy_name=alloy_name,
-                                    residual_weight_kg=residual_weight_kg,
-                                    residual_temp_c=residual_temp_c,
-                                    excess_air_pct=ex_air,
-                                    dt_mins=dt_mins,
-                                )
-                                # Primary constraint: must reach target bath temp within deadline
-                                if summary['final_bath_temp_c'] >= (target_bath_temp_c - TARGET_TEMP_TOLERANCE_C):
-                                    if summary['total_cost'] < best_cost:
-                                        best_cost = summary['total_cost']
-                                        best_params = (sp_m, t_sw1, sp_soak, t_sw2, sp_h, ex_air)
-                                        best_df_sim = df_sim
-                                        best_summary = summary
+                    t_sw2 = min(discharge_deadline_hrs * 0.88, t_sw1 + 1.2)
+                    for sp_h in sp_holds:
+                        for ex_air in excess_airs:
+                            df_sim, summary = self.simulate_trajectory(
+                                charged_weight_kg=charged_weight_kg,
+                                target_duration_hrs=discharge_deadline_hrs,
+                                sp_roof_melt=sp_m,
+                                t_switch_hrs=t_sw1,
+                                sp_roof_soak=sp_soak,
+                                t_soak_end_hrs=t_sw2,
+                                sp_roof_hold=sp_h,
+                                alloy_name=alloy_name,
+                                residual_weight_kg=residual_weight_kg,
+                                residual_temp_c=residual_temp_c,
+                                excess_air_pct=ex_air,
+                                dt_mins=dt_mins,
+                            )
+                            # Primary constraint: must reach target bath temp within deadline
+                            if summary['final_bath_temp_c'] >= (target_bath_temp_c - TARGET_TEMP_TOLERANCE_C):
+                                if summary['total_cost'] < best_cost:
+                                    best_cost = summary['total_cost']
+                                    best_params = (sp_m, t_sw1, sp_soak, t_sw2, sp_h, ex_air)
+                                    best_df_sim = df_sim
+                                    best_summary = summary
 
         # Fallback if no solution reaches target bath temp
         if best_params is None:

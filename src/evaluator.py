@@ -112,7 +112,6 @@ class MelterEvaluator:
                 discharge_deadline_hrs=float(duration_hrs),
                 alloy_name=alloy_name,
                 target_bath_temp_c=target_bath_temp_c,
-                enable_overhead=False,
                 dt_mins=dt_mins,
             )
             opt_params = opt_res['optimal_params']
