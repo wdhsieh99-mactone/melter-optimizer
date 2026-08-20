@@ -12,12 +12,30 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import os
 import sys
+import importlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src.physics_model import MelterPhysicsModel
-from src.optimizer import HeatingCurveOptimizer
-from src.config_manager import load_app_config
+try:
+    import src.physics_model as physics_model_module
+    import src.optimizer as optimizer_module
+    import src.config_manager as config_manager_module
+    importlib.reload(physics_model_module)
+    importlib.reload(optimizer_module)
+    importlib.reload(config_manager_module)
+    from src.physics_model import MelterPhysicsModel
+    from src.optimizer import HeatingCurveOptimizer
+    from src.config_manager import load_app_config
+except ImportError:
+    import physics_model as physics_model_module
+    import optimizer as optimizer_module
+    import config_manager as config_manager_module
+    importlib.reload(physics_model_module)
+    importlib.reload(optimizer_module)
+    importlib.reload(config_manager_module)
+    from physics_model import MelterPhysicsModel
+    from optimizer import HeatingCurveOptimizer
+    from config_manager import load_app_config
 
 def parse_hhmm_to_hours(time_str: str, default: float = 0.0) -> float:
     if not time_str or not isinstance(time_str, str):

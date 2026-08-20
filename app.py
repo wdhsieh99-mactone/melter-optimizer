@@ -11,12 +11,31 @@ from plotly.subplots import make_subplots
 import json
 import os
 
+import importlib
+import sys
+
 try:
+    import src.physics_model as physics_model_module
+    import src.optimizer as optimizer_module
+    import src.config_manager as config_manager_module
+    import src.evaluator as evaluator_module
+    importlib.reload(physics_model_module)
+    importlib.reload(optimizer_module)
+    importlib.reload(config_manager_module)
+    importlib.reload(evaluator_module)
     from src.physics_model import MelterPhysicsModel, ALLOY_PROPERTIES, _CALIBRATED_CONSTANTS_PATH, GAS_LHV
     from src.optimizer import HeatingCurveOptimizer, format_hours_to_hhmm, parse_hhmm_to_hours
     from src.evaluator import MelterEvaluator
     from src.config_manager import load_app_config, save_app_config, reset_app_config, DEFAULT_APP_CONFIG
 except ImportError:
+    import physics_model as physics_model_module
+    import optimizer as optimizer_module
+    import config_manager as config_manager_module
+    import evaluator as evaluator_module
+    importlib.reload(physics_model_module)
+    importlib.reload(optimizer_module)
+    importlib.reload(config_manager_module)
+    importlib.reload(evaluator_module)
     from physics_model import MelterPhysicsModel, ALLOY_PROPERTIES, _CALIBRATED_CONSTANTS_PATH, GAS_LHV
     from optimizer import HeatingCurveOptimizer, format_hours_to_hhmm, parse_hhmm_to_hours
     from evaluator import MelterEvaluator

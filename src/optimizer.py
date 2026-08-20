@@ -339,6 +339,7 @@ class HeatingCurveOptimizer:
         reversal_loss_pct: float = 4.0,
         refractory_reheat_gj: float = 7.0,
         actual_total_duration_hrs: Optional[float] = None,
+        **kwargs
     ) -> Dict:
         """Finds the optimal discrete multi-step schedule (Step 1 Melt -> Step 2 Flat -> Step 3 Hold)
         that minimizes gas + dross cost, SUBJECT TO reaching target_bath_temp_c by discharge_deadline_hrs.
