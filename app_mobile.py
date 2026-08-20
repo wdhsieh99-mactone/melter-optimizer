@@ -262,14 +262,14 @@ def main():
             selected_alloy = st.selectbox("1. 產出鋁種", alloy_list, index=alloy_idx)
             charged_tonnes = st.number_input("2. 投料量 (t)", min_value=10.0, max_value=85.0, value=float(proc_cfg.get('charged_weight_tonnes', 65.0)), step=1.0)
         with col_m2:
-            target_hrs = st.number_input("3. 時限 (h)", min_value=3.0, max_value=10.0, value=float(proc_cfg.get('target_duration_hrs', 6.0)), step=0.5)
+            target_hrs = st.number_input("3. 時限 (h)", min_value=3.0, max_value=10.0, value=float(proc_cfg.get('target_duration_hrs', 6.5)), step=0.5)
             residual_tonnes = st.number_input("4. 殘湯量 (t)", min_value=0.0, max_value=15.0, value=float(proc_cfg.get('residual_weight_tonnes', 5.0)), step=0.5)
 
         with st.expander("🛠️ 現行升溫方案與進階設定", expanded=False):
             base_sp1 = st.number_input("現行第1段頂溫 (°C)", min_value=900.0, max_value=1250.0, value=float(proc_cfg.get('baseline_sp1', 1180.0)), step=10.0)
             base_dur1_str = st.text_input("現行第1段時長 (hh:mm)", value=str(proc_cfg.get('baseline_dur1_hhmm', '04:30')))
-            base_sp2 = st.number_input("現行第2段頂溫 (°C)", min_value=800.0, max_value=1150.0, value=float(proc_cfg.get('baseline_sp2', 950.0)), step=10.0)
-            base_dur2_str = st.text_input("現行第2段時長 (hh:mm)", value=str(proc_cfg.get('baseline_dur2_hhmm', '00:00')))
+            base_sp2 = st.number_input("現行第2段頂溫 (°C)", min_value=800.0, max_value=1150.0, value=float(proc_cfg.get('baseline_sp2', 800.0)), step=10.0)
+            base_dur2_str = st.text_input("現行第2段時長 (hh:mm)", value=str(proc_cfg.get('baseline_dur2_hhmm', '02:00')))
             base_sp3 = st.number_input("現行第3段保溫設點 (°C)", min_value=700.0, max_value=900.0, value=float(proc_cfg.get('baseline_sp3', 780.0)), step=10.0)
             
             excess_air_pct = st.slider("現行過剩空氣率 (%)", min_value=5.0, max_value=60.0, value=float(proc_cfg.get('excess_air_pct', 40.0)), step=1.0)
@@ -366,8 +366,56 @@ def main():
         x_f = excess_air_pct / 100.0
         est_o2 = (21.0 * x_f) / (1.0 + x_f * 1.05)
 
-    # --- 1. DCS 3-Step Recipe for Mobile Operators ---
-    st.markdown("### 📝 DCS 3 段階梯操作配方")
+    # --- 1. Current Practice Recipe & DCS 3-Step Recipe for Mobile Operators ---
+    t_base_s1_end = min(target_hrs, dur1_hrs)
+    t_base_s2_end = min(target_hrs, dur1_hrs + dur2_hrs)
+    s_base1_interval = f"00:00~{format_hours_to_hhmm(t_base_s1_end)}"
+    s_base1_dur = format_hours_to_hhmm(t_base_s1_end)
+    s_base2_interval = f"{format_hours_to_hhmm(t_base_s1_end)}~{format_hours_to_hhmm(t_base_s2_end)}"
+    s_base2_dur = format_hours_to_hhmm(max(0.0, t_base_s2_end - t_base_s1_end))
+    has_base_s3 = (t_base_s2_end < target_hrs - 1e-4)
+    s_base3_interval = f"{format_hours_to_hhmm(t_base_s2_end)}~{format_hours_to_hhmm(target_hrs)}"
+    s_base3_dur = format_hours_to_hhmm(max(0.0, target_hrs - t_base_s2_end))
+
+    st.markdown("### 🏛️ 現行升溫操作方案 (Current Practice)")
+    base_cards_html = f"""
+        <div class="recipe-card" style="border-left-color: #D32F2F;">
+            <div class="recipe-step-title">
+                <span>🔥 第 1 段：主熔化大火 ({s_base1_interval})</span>
+                <span style="color:#C62828;"><b>{base_sp1:.0f} °C</b></span>
+            </div>
+            <div class="recipe-step-body">
+                - 持續時間：<b>{s_base1_dur}</b> | 燒嘴：Dual Pair (交替全火)<br>
+                - 工藝目標：加料關門後全火升溫化料
+            </div>
+        </div>
+        <div class="recipe-card" style="border-left-color: #1976D2;">
+            <div class="recipe-step-title">
+                <span>⚡ 第 2 段：降溫保溫段 ({s_base2_interval})</span>
+                <span style="color:#1565C0;"><b>{base_sp2:.0f} °C</b></span>
+            </div>
+            <div class="recipe-step-body">
+                - 持續時間：<b>{s_base2_dur}</b> | 燒嘴：Dual / Single Pair (交替中/微火)<br>
+                - 工藝目標：平湯降火，維持出湯溫度 780°C 保溫
+            </div>
+        </div>
+    """
+    if has_base_s3:
+        base_cards_html += f"""
+        <div class="recipe-card" style="border-left-color: #455A64;">
+            <div class="recipe-step-title">
+                <span>🛡️ 第 3 段：出湯保溫段 ({s_base3_interval})</span>
+                <span style="color:#37474F;"><b>{base_sp3:.0f} °C</b></span>
+            </div>
+            <div class="recipe-step-body">
+                - 持續時間：<b>{s_base3_dur}</b> | 燒嘴：Single Pair (交替微火)<br>
+                - 工藝目標：保溫待出湯
+            </div>
+        </div>
+        """
+    st.markdown(base_cards_html, unsafe_allow_html=True)
+
+    st.markdown("### 🚀 最佳化 DCS 3 段階梯操作配方 (Optimal Recipe)")
     if recipe_steps and len(recipe_steps) == 3:
         s1, s2, s3 = recipe_steps[0], recipe_steps[1], recipe_steps[2]
         st.markdown(f"""

@@ -472,7 +472,7 @@ def main():
     target_duration_hrs = st.sidebar.slider(
         "要求出湯時限 (小時) Required Discharge Deadline",
         min_value=3.0, max_value=10.0,
-        value=float(proc_cfg.get('target_duration_hrs', 6.0)), step=0.5,
+        value=float(proc_cfg.get('target_duration_hrs', 6.5)), step=0.5,
         help="必須在此時限內達到目標湯溫並可出湯 — 這是硬性限制，最佳化只在能達成此時限的方案中挑選成本最低者。"
     )
     target_bath_temp = st.sidebar.slider(
@@ -497,19 +497,19 @@ def main():
                 help="加料完成關門後融化大火目標頂溫 (現場基準為 1180°C)"
             )
         with col_t1_dur:
-            def_dur1_str = str(proc_cfg.get('baseline_dur1_hhmm', format_hours_to_hhmm(target_duration_hrs)))
-            base_dur1_str = st.text_input("第1段持續時間 (hh:mm)", value=def_dur1_str, key="base_dur1", help="現行升溫方案操作：加料關門後 1180°C 大火持續到底")
+            def_dur1_str = str(proc_cfg.get('baseline_dur1_hhmm', '04:30'))
+            base_dur1_str = st.text_input("第1段持續時間 (hh:mm)", value=def_dur1_str, key="base_dur1", help="現行升溫方案操作：加料關門後 1180°C 大火時長 (預設 04:30)")
 
         st.markdown("**第 2 段：平湯/過渡段 (Flat Bath Mode)**")
         col_t2_sp, col_t2_dur = st.columns([1, 1])
         with col_t2_sp:
             base_sp2 = st.number_input(
                 "第2段目標頂溫 (°C)", min_value=800.0, max_value=1150.0,
-                value=float(proc_cfg.get('baseline_sp2', 950.0)), step=10.0, key="base_sp2"
+                value=float(proc_cfg.get('baseline_sp2', 800.0)), step=10.0, key="base_sp2"
             )
         with col_t2_dur:
-            def_dur2_str = str(proc_cfg.get('baseline_dur2_hhmm', '00:00'))
-            base_dur2_str = st.text_input("第2段持續時間 (hh:mm)", value=def_dur2_str, key="base_dur2", help="若現場無過渡段直接切換湯溫，持續時間設為 00:00")
+            def_dur2_str = str(proc_cfg.get('baseline_dur2_hhmm', '02:00'))
+            base_dur2_str = st.text_input("第2段持續時間 (hh:mm)", value=def_dur2_str, key="base_dur2", help="平湯保溫段持續時間 (預設 02:00)")
 
         st.markdown("**第 3 段：湯溫/保溫模式 (Bath Mode)**")
         col_t3_sp, col_t3_dur = st.columns([1, 1])
