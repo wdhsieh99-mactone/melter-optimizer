@@ -924,6 +924,8 @@ def main():
                     f"節省 -${base_sum['gas_cost'] - opt_sum['gas_cost']:,.0f} (-{((base_sum['gas_cost'] - opt_sum['gas_cost'])/base_sum['gas_cost']*100) if base_sum['gas_cost']>0 else 0:.1f}%)",
                     f"減少 -${base_sum['dross_cost'] - opt_sum['dross_cost']:,.0f} (-{((base_sum['dross_cost'] - opt_sum['dross_cost'])/base_sum['dross_cost']*100) if base_sum['dross_cost']>0 else 0:.1f}%)",
                     f"節約 -{savings['gas_savings_nm3']:,.1f} Nm³ (-{gas_pct:.1f}%)",
+                    f"節約 -{savings.get('net_gas_savings_nm3', savings['gas_savings_nm3']):,.1f} Nm³ (淨熔解省氣)",
+                    f"換向與保溫連鎖節約 -{base_ov_nm3 - opt_ov_nm3:.1f} Nm³",
                     f"下降 -{base_gas_per_t - opt_gas_per_t:.1f} Nm³/t (-{gas_pct:.1f}%)",
                     f"減少 -{savings['dross_savings_kg']:.1f} kg (-{dross_pct:.1f}%)",
                     f"降低 -{base_dross_pct - opt_dross_pct:.2f} 個百分點",
