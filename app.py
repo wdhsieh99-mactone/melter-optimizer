@@ -909,6 +909,8 @@ def main():
                     f"${opt_sum['gas_cost']:,.0f} TWD",
                     f"${opt_sum['dross_cost']:,.0f} TWD",
                     f"{opt_sum['cum_gas_nm3']:,.1f} Nm³",
+                    f"{opt_net_nm3:,.1f} Nm³ ({opt_net_nm3/total_metal_tonnes:.1f} Nm³/t)",
+                    f"{opt_ov_nm3:,.1f} Nm³ ({opt_ov_nm3/total_metal_tonnes:.1f} Nm³/t)",
                     f"{opt_gas_per_t:.1f} Nm³/t",
                     f"{opt_sum['cum_dross_kg']:.1f} kg",
                     f"{opt_dross_pct:.2f}%",
