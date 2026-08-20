@@ -260,9 +260,9 @@ def main():
         col_m1, col_m2 = st.columns(2)
         with col_m1:
             selected_alloy = st.selectbox("1. 產出鋁種", alloy_list, index=alloy_idx)
-            charged_tonnes = st.number_input("2. 投料量 (t)", min_value=10.0, max_value=85.0, value=float(proc_cfg.get('charged_weight_tonnes', 55.0)), step=1.0)
+            charged_tonnes = st.number_input("2. 投料量 (t)", min_value=10.0, max_value=85.0, value=float(proc_cfg.get('charged_weight_tonnes', 65.0)), step=1.0)
         with col_m2:
-            target_hrs = st.number_input("3. 時限 (h)", min_value=3.0, max_value=10.0, value=float(proc_cfg.get('target_duration_hrs', 5.0)), step=0.5)
+            target_hrs = st.number_input("3. 時限 (h)", min_value=3.0, max_value=10.0, value=float(proc_cfg.get('target_duration_hrs', 6.0)), step=0.5)
             residual_tonnes = st.number_input("4. 殘湯量 (t)", min_value=0.0, max_value=15.0, value=float(proc_cfg.get('residual_weight_tonnes', 5.0)), step=0.5)
 
         with st.expander("🛠️ 現行升溫方案與進階設定", expanded=False):
@@ -335,8 +335,8 @@ def main():
     # Metrics prep
     total_metal_tonnes = (charged_weight_kg + residual_weight_kg) / 1000.0
     charged_metal_tonnes = charged_weight_kg / 1000.0
-    base_gas_per_t = base_sum['cum_gas_nm3'] / total_metal_tonnes if total_metal_tonnes > 0 else 0.0
-    opt_gas_per_t = opt_sum['cum_gas_nm3'] / total_metal_tonnes if total_metal_tonnes > 0 else 0.0
+    base_gas_per_t = base_sum['cum_gas_nm3'] / charged_metal_tonnes if charged_metal_tonnes > 0 else 0.0
+    opt_gas_per_t = opt_sum['cum_gas_nm3'] / charged_metal_tonnes if charged_metal_tonnes > 0 else 0.0
     
     base_net_nm3 = base_sum.get('net_gas_nm3', base_sum['cum_gas_nm3'])
     base_ov_nm3 = base_sum.get('overhead_gas_nm3', 0.0)
@@ -532,8 +532,8 @@ def main():
                 f"${base_sum['gas_cost']:,.0f} TWD",
                 f"${base_sum['dross_cost']:,.0f} TWD",
                 f"{base_sum['cum_gas_nm3']:,.1f} Nm³",
-                f"{base_net_nm3:,.1f} Nm³ ({base_net_nm3/total_metal_tonnes:.1f} Nm³/t)",
-                f"{base_ov_nm3:,.1f} Nm³ ({base_ov_nm3/total_metal_tonnes:.1f} Nm³/t)",
+                f"{base_net_nm3:,.1f} Nm³ ({base_net_nm3/charged_metal_tonnes:.1f} Nm³/t)",
+                f"{base_ov_nm3:,.1f} Nm³ ({base_ov_nm3/charged_metal_tonnes:.1f} Nm³/t)",
                 f"{base_gas_per_t:.1f} Nm³/t",
                 f"{base_sum['cum_dross_kg']:.1f} kg",
                 f"{base_dross_pct:.2f}%",
@@ -549,8 +549,8 @@ def main():
                 f"${opt_sum['gas_cost']:,.0f} TWD",
                 f"${opt_sum['dross_cost']:,.0f} TWD",
                 f"{opt_sum['cum_gas_nm3']:,.1f} Nm³",
-                f"{opt_net_nm3:,.1f} Nm³ ({opt_net_nm3/total_metal_tonnes:.1f} Nm³/t)",
-                f"{opt_ov_nm3:,.1f} Nm³ ({opt_ov_nm3/total_metal_tonnes:.1f} Nm³/t)",
+                f"{opt_net_nm3:,.1f} Nm³ ({opt_net_nm3/charged_metal_tonnes:.1f} Nm³/t)",
+                f"{opt_ov_nm3:,.1f} Nm³ ({opt_ov_nm3/charged_metal_tonnes:.1f} Nm³/t)",
                 f"{opt_gas_per_t:.1f} Nm³/t",
                 f"{opt_sum['cum_dross_kg']:.1f} kg",
                 f"{opt_dross_pct:.2f}%",

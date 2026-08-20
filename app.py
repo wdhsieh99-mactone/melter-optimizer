@@ -461,8 +461,8 @@ def main():
 
     residual_weight_tonnes = st.sidebar.number_input(
         "前爐殘湯重量 (公噸) Carry-in Residual", min_value=0.0, max_value=15.0,
-        value=float(proc_cfg.get('residual_weight_tonnes', 7.0)), step=0.5,
-        help="上一爐留在爐內、尚未出清的高溫殘湯重量 — 現場經驗約 5~10 公噸。"
+        value=float(proc_cfg.get('residual_weight_tonnes', 5.0)), step=0.5,
+        help="上一爐留在爐內、尚未出清的高溫殘湯重量 — 現場基準為 5 公噸。"
              "此殘湯已接近液相線溫度，會降低本爐實際所需的新增熱量，模型現已納入計算。"
     )
     residual_weight_kg = residual_weight_tonnes * 1000.0
@@ -734,8 +734,8 @@ def main():
         # Section 1: Comprehensive KPI Comparison
         total_metal_tonnes = (charged_weight_kg + residual_weight_kg) / 1000.0
         charged_metal_tonnes = charged_weight_kg / 1000.0
-        base_gas_per_t = base_sum['cum_gas_nm3'] / total_metal_tonnes if total_metal_tonnes > 0 else 0.0
-        opt_gas_per_t = opt_sum['cum_gas_nm3'] / total_metal_tonnes if total_metal_tonnes > 0 else 0.0
+        base_gas_per_t = base_sum['cum_gas_nm3'] / charged_metal_tonnes if charged_metal_tonnes > 0 else 0.0
+        opt_gas_per_t = opt_sum['cum_gas_nm3'] / charged_metal_tonnes if charged_metal_tonnes > 0 else 0.0
         
         base_net_nm3 = base_sum.get('net_gas_nm3', base_sum['cum_gas_nm3'])
         base_ov_nm3 = base_sum.get('overhead_gas_nm3', 0.0)
@@ -892,8 +892,8 @@ def main():
                     f"${base_sum['gas_cost']:,.0f} TWD",
                     f"${base_sum['dross_cost']:,.0f} TWD",
                     f"{base_sum['cum_gas_nm3']:,.1f} Nm³",
-                    f"{base_net_nm3:,.1f} Nm³ ({base_net_nm3/total_metal_tonnes:.1f} Nm³/t)",
-                    f"{base_ov_nm3:,.1f} Nm³ ({base_ov_nm3/total_metal_tonnes:.1f} Nm³/t)",
+                    f"{base_net_nm3:,.1f} Nm³ ({base_net_nm3/charged_metal_tonnes:.1f} Nm³/t)",
+                    f"{base_ov_nm3:,.1f} Nm³ ({base_ov_nm3/charged_metal_tonnes:.1f} Nm³/t)",
                     f"{base_gas_per_t:.1f} Nm³/t",
                     f"{base_sum['cum_dross_kg']:.1f} kg",
                     f"{base_dross_pct:.2f}%",
@@ -909,8 +909,8 @@ def main():
                     f"${opt_sum['gas_cost']:,.0f} TWD",
                     f"${opt_sum['dross_cost']:,.0f} TWD",
                     f"{opt_sum['cum_gas_nm3']:,.1f} Nm³",
-                    f"{opt_net_nm3:,.1f} Nm³ ({opt_net_nm3/total_metal_tonnes:.1f} Nm³/t)",
-                    f"{opt_ov_nm3:,.1f} Nm³ ({opt_ov_nm3/total_metal_tonnes:.1f} Nm³/t)",
+                    f"{opt_net_nm3:,.1f} Nm³ ({opt_net_nm3/charged_metal_tonnes:.1f} Nm³/t)",
+                    f"{opt_ov_nm3:,.1f} Nm³ ({opt_ov_nm3/charged_metal_tonnes:.1f} Nm³/t)",
                     f"{opt_gas_per_t:.1f} Nm³/t",
                     f"{opt_sum['cum_dross_kg']:.1f} kg",
                     f"{opt_dross_pct:.2f}%",

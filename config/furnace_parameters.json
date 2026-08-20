@@ -2,7 +2,7 @@
     "process": {
         "alloy_name": "5052",
         "charged_weight_tonnes": 65.0,
-        "residual_weight_tonnes": 0.0,
+        "residual_weight_tonnes": 5.0,
         "target_duration_hrs": 6.0,
         "target_bath_temp_c": 780.0,
         "max_roof_sp_limit": 1200.0,
