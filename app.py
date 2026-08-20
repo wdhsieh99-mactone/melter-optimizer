@@ -413,7 +413,14 @@ def check_password(password: str) -> bool:
 
 def main():
     st.title("🔥 80T 反射式熔鋁爐升溫曲線與空燃比最佳化系統")
-    st.caption("80T Static Aluminum Melter — Alloy Aware, Air-Fuel Ratio & 4-Burner 2-Pair Regenerative Combustion Optimizer")
+    st.markdown(
+        '<div style="background:linear-gradient(90deg, #E3F2FD 0%, #BBDEFB 100%); padding:6px 14px; border-radius:6px; border-left:5px solid #1976D2; margin-bottom:8px; font-size:0.92rem; font-weight:600; color:#0D47A1; display:flex; justify-content:space-between; align-items:center;">'
+        '<span>🚀 系統版本: <b>v2.2.0-Phase2</b> (燃氣功率 ⇄ 爐頂/爐膛 ⇄ 熔浴 閉迴路動態熱平衡 & 嚴格能量守恆版)</span>'
+        '<span style="background:#1976D2; color:white; padding:2px 8px; border-radius:10px; font-size:0.78rem;">115.08.20 Release</span>'
+        '</div>',
+        unsafe_allow_html=True
+    )
+    st.caption("80T Static Aluminum Melter — Closed-Loop Alloy Aware, Air-Fuel Ratio & 4-Burner 2-Pair Regenerative Combustion Optimizer")
     
     if 'is_authenticated' not in st.session_state:
         st.session_state['is_authenticated'] = False

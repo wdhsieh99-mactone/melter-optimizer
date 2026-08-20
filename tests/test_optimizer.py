@@ -223,3 +223,40 @@ def test_phase1_timestep_t0_is_pure_initial_state():
     # Final time must equal duration exactly
     assert df_sim['time_hrs'].iloc[-1] == 6.0
 
+
+def test_closed_loop_roof_temperature_throttled_by_gas_limit():
+    # When burner capacity is constrained, the physical roof temperature cannot artificially
+    # jump to the setpoint -- closed-loop feedback throttles roof temperature rise.
+    model = MelterPhysicsModel()
+    
+    # 1. Normal burner capacity (880 Nm3/h)
+    opt_normal = HeatingCurveOptimizer(model, max_gas_flow_dual_pair=880.0)
+    df_normal, _ = opt_normal.simulate_trajectory(
+        charged_weight_kg=65000.0,
+        target_duration_hrs=2.0,
+        sp_roof_melt=1200.0,
+        t_switch_hrs=2.0,
+        sp_roof_hold=1200.0,
+        alloy_name='5052',
+        initial_roof_temp_c=600.0,
+        initial_bath_temp_c=25.0,
+    )
+
+    # 2. Severely constrained burner capacity (150 Nm3/h)
+    opt_limited = HeatingCurveOptimizer(model, max_gas_flow_dual_pair=150.0)
+    df_limited, _ = opt_limited.simulate_trajectory(
+        charged_weight_kg=65000.0,
+        target_duration_hrs=2.0,
+        sp_roof_melt=1200.0,
+        t_switch_hrs=2.0,
+        sp_roof_hold=1200.0,
+        alloy_name='5052',
+        initial_roof_temp_c=600.0,
+        initial_bath_temp_c=25.0,
+    )
+
+    # Under severe gas limit, roof temperature must be significantly lower than unconstrained case
+    assert df_limited['roof_temp_c'].iloc[20] < df_normal['roof_temp_c'].iloc[20]
+    assert df_limited['bath_temp_c'].iloc[-1] < df_normal['bath_temp_c'].iloc[-1]
+
+

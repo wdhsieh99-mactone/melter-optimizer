@@ -246,8 +246,11 @@ def main():
     # Mobile Header
     st.markdown("""
         <div class="mobile-header">
-            <h2>🔥 80T 熔鋁爐升溫最佳化</h2>
-            <p>📱 手機即時操作配方與節能試算 (Mobile Web App)</p>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h2>🔥 80T 熔鋁爐升溫最佳化</h2>
+                <span style="background:rgba(255,255,255,0.25); padding:2px 8px; border-radius:10px; font-size:0.72rem; font-weight:700;">v2.2.0-Phase2</span>
+            </div>
+            <p>📱 手機即時操作配方與節能試算 (閉迴路熱平衡版)</p>
         </div>
     """, unsafe_allow_html=True)
 
