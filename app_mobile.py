@@ -461,15 +461,15 @@ def main():
         st.metric(
             label="每爐總生產成本 (TWD)",
             value=f"${base_sum['total_cost']:,.0f}",
-            help=f"天然氣費 ${base_sum['gas_cost']:,.0f} + 氧化燒損金屬損失 ${base_sum['dross_cost']:,.0f}"
+            help=f"天然氣費 NT$ {base_sum['gas_cost']:,.0f} + 氧化燒損金屬損失 NT$ {base_sum['dross_cost']:,.0f}"
         )
-        st.caption(f"💰 瓦斯: **${base_sum['gas_cost']:,.0f}** + 燒損: **${base_sum['dross_cost']:,.0f}**")
+        st.caption(f"💰 瓦斯: **NT$ {base_sum['gas_cost']:,.0f}** ＋ 燒損: **NT$ {base_sum['dross_cost']:,.0f}**")
         st.metric(
             label="天然氣總耗量 (Nm³)",
             value=f"{base_sum['cum_gas_nm3']:,.1f}",
-            help=f"天然氣單耗: {base_gas_per_t:.1f} Nm³/t (淨熔解: {base_net_nm3/total_metal_tonnes:.1f} + 工藝附加: {base_ov_nm3/total_metal_tonnes:.1f})"
+            help=f"天然氣單耗: {base_gas_per_t:.1f} Nm³/t (淨熔解: {base_net_nm3/charged_metal_tonnes:.1f} + 工藝附加: {base_ov_nm3/charged_metal_tonnes:.1f})"
         )
-        st.caption(f"📊 單耗: **{base_gas_per_t:.1f} Nm³/t**" if not enable_overhead else f"📊 總單耗: **{base_gas_per_t:.1f}** (淨: {base_net_nm3/total_metal_tonnes:.1f}+附加: {base_ov_nm3/total_metal_tonnes:.1f})")
+        st.caption(f"📊 投料單耗: **{base_gas_per_t:.1f} Nm³/t**" if not enable_overhead else f"📊 投料總單耗: **{base_gas_per_t:.1f} Nm³/t** (淨: {base_net_nm3/charged_metal_tonnes:.1f}+附加: {base_ov_nm3/charged_metal_tonnes:.1f})")
         base_mode_val = f"{base_sp1:.0f} °C" if dur1_hrs >= target_hrs else f"{base_sp1:.0f} → {base_sp3:.0f} °C"
         st.metric(
             label="溫控設點模式 (°C)",
@@ -506,9 +506,9 @@ def main():
             value=f"${opt_sum['total_cost']:,.0f}",
             delta=f"-${savings['cost_savings_twd']:,.0f} (-{savings['cost_savings_pct']:.1f}%)",
             delta_color="normal",
-            help=f"天然氣費 ${opt_sum['gas_cost']:,.0f} + 氧化燒損金屬損失 ${opt_sum['dross_cost']:,.0f}"
+            help=f"天然氣費 NT$ {opt_sum['gas_cost']:,.0f} + 氧化燒損金屬損失 NT$ {opt_sum['dross_cost']:,.0f}"
         )
-        st.caption(f"💰 瓦斯: **${opt_sum['gas_cost']:,.0f}** + 燒損: **${opt_sum['dross_cost']:,.0f}**")
+        st.caption(f"💰 瓦斯: **NT$ {opt_sum['gas_cost']:,.0f}** ＋ 燒損: **NT$ {opt_sum['dross_cost']:,.0f}**")
         st.metric(
             label="天然氣總耗量 (Nm³)",
             value=f"{opt_sum['cum_gas_nm3']:,.1f}",
@@ -516,7 +516,7 @@ def main():
             delta_color="normal",
             help=f"最佳化天然氣單耗: {opt_gas_per_t:.1f} Nm³/t (下降 {base_gas_per_t - opt_gas_per_t:.1f} Nm³/t)"
         )
-        st.caption(f"📊 單耗: **{opt_gas_per_t:.1f} Nm³/t**" if not enable_overhead else f"📊 總單耗: **{opt_gas_per_t:.1f}** (淨: {opt_net_nm3/total_metal_tonnes:.1f}+附加: {opt_ov_nm3/total_metal_tonnes:.1f})")
+        st.caption(f"📊 投料單耗: **{opt_gas_per_t:.1f} Nm³/t**" if not enable_overhead else f"📊 投料總單耗: **{opt_gas_per_t:.1f} Nm³/t** (淨: {opt_net_nm3/charged_metal_tonnes:.1f}+附加: {opt_ov_nm3/charged_metal_tonnes:.1f})")
         st.metric(
             label="最佳 3 段階梯溫控 (°C)",
             value=f"{opt_params['sp_roof_melt']:.0f} → {opt_params['sp_roof_soak']:.0f} → {opt_params['sp_roof_hold']:.0f}",

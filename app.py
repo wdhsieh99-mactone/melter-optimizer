@@ -775,9 +775,9 @@ def main():
             st.metric(
                 label="天然氣總耗量 (Nm³)",
                 value=f"{base_sum['cum_gas_nm3']:,.1f}",
-                help=f"天然氣單耗: {base_gas_per_t:.1f} Nm³/t (淨熔解: {base_net_nm3/total_metal_tonnes:.1f} + 工藝附加: {base_ov_nm3/total_metal_tonnes:.1f})"
+                help=f"天然氣單耗: {base_gas_per_t:.1f} Nm³/t (淨熔解: {base_net_nm3/charged_metal_tonnes:.1f} + 工藝附加: {base_ov_nm3/charged_metal_tonnes:.1f})"
             )
-            st.caption(f"📊 單耗: **{base_gas_per_t:.1f} Nm³/t**" if not enable_overhead else f"📊 總單耗: **{base_gas_per_t:.1f}** (淨: {base_net_nm3/total_metal_tonnes:.1f}+附加: {base_ov_nm3/total_metal_tonnes:.1f})")
+            st.caption(f"📊 投料單耗: **{base_gas_per_t:.1f} Nm³/t**" if not enable_overhead else f"📊 投料總單耗: **{base_gas_per_t:.1f} Nm³/t** (淨: {base_net_nm3/charged_metal_tonnes:.1f}+附加: {base_ov_nm3/charged_metal_tonnes:.1f})")
         with b_col3:
             st.metric(
                 label="氧化燒損渣量 (kg)",
@@ -826,7 +826,7 @@ def main():
                 delta=f"-{savings['gas_savings_nm3']:,.1f} (-{gas_pct:.1f}%)",
                 delta_color="normal"
             )
-            st.caption(f"📊 單耗: **{opt_gas_per_t:.1f} Nm³/t**" if not enable_overhead else f"📊 總單耗: **{opt_gas_per_t:.1f}** (淨: {opt_net_nm3/total_metal_tonnes:.1f}+附加: {opt_ov_nm3/total_metal_tonnes:.1f})")
+            st.caption(f"📊 投料單耗: **{opt_gas_per_t:.1f} Nm³/t**" if not enable_overhead else f"📊 投料總單耗: **{opt_gas_per_t:.1f} Nm³/t** (淨: {opt_net_nm3/charged_metal_tonnes:.1f}+附加: {opt_ov_nm3/charged_metal_tonnes:.1f})")
         with o_col3:
             st.metric(
                 label="氧化燒損渣量 (kg)",
