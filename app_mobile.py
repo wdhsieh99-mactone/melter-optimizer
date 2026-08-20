@@ -249,9 +249,9 @@ def main():
         <div class="mobile-header">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <h2>🔥 80T 熔鋁爐升溫最佳化</h2>
-                <span style="background:rgba(255,255,255,0.25); padding:2px 8px; border-radius:10px; font-size:0.72rem; font-weight:700;">v2.2.0-Phase2</span>
+                <span style="background:rgba(255,255,255,0.25); padding:2px 8px; border-radius:10px; font-size:0.72rem; font-weight:700;">v2.3.0</span>
             </div>
-            <p>📱 手機即時操作配方與節能試算 (閉迴路熱平衡版)</p>
+            <p>📱 手機即時操作配方與節能試算 (TT201/TT200 全軌跡版)</p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -639,6 +639,7 @@ def main():
     
     # Baseline
     fig1.add_trace(go.Scatter(x=df_base['time_hrs'], y=df_base['sp_roof_c'], name='現行頂溫設點', legendgroup='現行方案', legendgrouptitle=dict(text='<b>🏛️ 現行升溫方案：</b>'), line=dict(color='#E53935', width=2, dash='dash')))
+    fig1.add_trace(go.Scatter(x=df_base['time_hrs'], y=df_base['roof_temp_c'], name='現行頂溫 (TT201)', legendgroup='現行方案', line=dict(color='#FF8A80', width=2)))
     fig1.add_trace(go.Scatter(x=df_base['time_hrs'], y=df_base['bath_temp_c'], name='現行鋁湯溫度 (TT200)', legendgroup='現行方案', line=dict(color='#D81B60', width=2.5)))
     
     # Markers for baseline
