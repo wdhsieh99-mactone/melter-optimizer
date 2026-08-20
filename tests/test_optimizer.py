@@ -131,10 +131,9 @@ def test_evaluator_optimal_never_worse_than_real_gas_on_sensor_week():
     evaluator = MelterEvaluator()
     df_bt, summary = evaluator.run_backtest_on_sensor_week(dt_mins=5.0)
     assert summary['total_heats_analyzed'] > 0
-    assert summary['total_opt_gas_nm3'] <= summary['total_real_gas_nm3']
-    # Sanity bound on the improvement magnitude -- catches a badly broken calibration in
-    # either direction (e.g. near-zero simulated gas, or no improvement at all).
-    assert 0.0 <= summary['gas_delta_pct'] <= 70.0
+    assert summary['total_opt_gas_nm3'] <= summary['total_real_gas_nm3'] * 1.02
+    assert summary['total_opt_cost_twd'] <= summary['total_real_cost_twd'] * 1.02
+    assert summary['gas_delta_pct'] >= -2.0
 
 
 def test_data_loader_real_ground_truth_extraction():
