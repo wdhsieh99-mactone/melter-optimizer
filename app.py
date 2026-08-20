@@ -417,7 +417,7 @@ def main():
     st.title("🔥 80T 反射式熔鋁爐升溫曲線與空燃比最佳化系統")
     st.markdown(
         '<div style="background:linear-gradient(90deg, #E3F2FD 0%, #BBDEFB 100%); padding:6px 14px; border-radius:6px; border-left:5px solid #1976D2; margin-bottom:8px; font-size:0.92rem; font-weight:600; color:#0D47A1; display:flex; justify-content:space-between; align-items:center;">'
-        '<span>🚀 系統版本: <b>v2.3.1</b> (動態對流係數 & 物理保溫熱平衡 & 90%信賴區間版)</span>'
+        '<span>🚀 系統版本: <b>v2.3.2</b> (保溫熱平衡無失控 & 燃氣/溫度全閉迴路耦合版)</span>'
         '<span style="background:#1976D2; color:white; padding:2px 8px; border-radius:10px; font-size:0.78rem;">115.08.20 Release</span>'
         '</div>',
         unsafe_allow_html=True

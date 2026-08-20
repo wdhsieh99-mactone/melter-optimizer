@@ -164,10 +164,17 @@ class HeatingCurveOptimizer:
                 burner_mode = 'Single Pair (交替微火)'
                 max_gas_limit = self.max_gas_flow_single_pair
             
+            # DCS Setpoint & Overheating High-Limit Protection
+            if current_bath_temp >= (target_bath_temp_c + 2.0):
+                # Holding mode: DCS throttles roof setpoint to prevent bath runaway
+                effective_sp_roof = min(sp_roof, target_bath_temp_c + 20.0)
+            else:
+                effective_sp_roof = sp_roof
+
             # Desired roof temperature response from DCS PID Setpoint
             k_roof_response = 15.0 # °C/min max response rate
-            roof_err = sp_roof - current_roof_temp
-            roof_target_step = current_roof_temp + np.clip(roof_err * 0.25, -k_roof_response * dt_mins, k_roof_response * dt_mins)
+            roof_err = effective_sp_roof - current_roof_temp
+            roof_target_step = current_roof_temp + np.clip(roof_err * 0.30, -k_roof_response * dt_mins, k_roof_response * dt_mins)
             
             is_flat_bath = (current_bath_temp >= liquidus)
 
@@ -189,45 +196,41 @@ class HeatingCurveOptimizer:
             
             # DCS PID / High-Limit Throttle Behavior with Closed-Loop Power Feedback
             if current_bath_temp >= (target_bath_temp_c + 2.0):
-                # Molten bath is at or above target tap temperature -> throttle burners to holding
-                current_roof_temp = roof_target_step
-                q_hold_needed_kw = self.model.wall_loss_kw + q_hearth_loss_kw
-                gas_flow_unclamp = (q_hold_needed_kw * 3600.0) / self.model.GAS_LHV if self.model.GAS_LHV > 0 else 0.0
-                gas_flow_nm3h = max(self.min_gas_flow_nm3h, min(self.max_gas_flow_single_pair, gas_flow_unclamp))
-                q_combustion_actual_kw = (gas_flow_nm3h * self.model.GAS_LHV) / 3600.0 if self.model.GAS_LHV > 0 else 0.0
-                q_bath_actual_kw = max(-30.0, min(30.0, (q_combustion_actual_kw - self.model.wall_loss_kw) * eff - q_hearth_loss_kw))
+                # Molten bath reached target -> fire only to offset steady wall and hearth losses
+                q_needed_kw = max(0.0, self.model.wall_loss_kw + q_hearth_loss_kw - max(0.0, -q_rad_target_kw))
+                gas_flow_unclamp = (q_needed_kw * 3600.0) / (eff * self.model.GAS_LHV) if self.model.GAS_LHV > 0 else self.min_gas_flow_nm3h
+                gas_flow_nm3h = max(self.min_gas_flow_nm3h, min(max_gas_limit, gas_flow_unclamp))
             elif q_net_to_bath_target_kw > 0:
                 q_combustion_needed_kw = (q_rad_target_kw + q_conv_target_kw) / eff + self.model.wall_loss_kw
-                gas_flow_unclamp = (q_combustion_needed_kw * 3600.0) / self.model.GAS_LHV if self.model.GAS_LHV > 0 else 0.0
-                gas_flow_nm3h = min(max_gas_limit, gas_flow_unclamp)
-                
-                q_combustion_actual_kw = (gas_flow_nm3h * self.model.GAS_LHV) / 3600.0 if self.model.GAS_LHV > 0 else 0.0
-                q_net_avail_chamber_kw = max(0.0, (q_combustion_actual_kw - self.model.wall_loss_kw) * eff)
-                
-                # Convective heat transfer scaled with actual burner firing gas velocity
-                h_conv_actual = h_base * (0.40 + 0.60 * min(1.0, gas_flow_nm3h / max_gas_limit))
-                
-                # Closed-Loop Feedback: If burner firing rate is saturated, roof temperature rise is throttled by available power
-                if gas_flow_unclamp > max_gas_limit:
-                    power_deficit_kw = (q_rad_target_kw + q_conv_target_kw) - q_net_avail_chamber_kw
-                    delta_t_roof_drop = (power_deficit_kw * dt_mins * 60.0) / c_roof_eff_kj_k
-                    current_roof_temp = max(current_bath_temp + 15.0, roof_target_step - delta_t_roof_drop)
-                    
-                    # Recalculate heat transfer at physical roof temperature
-                    q_rad_actual_kw = self.model.radiant_heat_flux_kw(current_roof_temp, current_bath_temp, is_flat_bath=is_flat_bath)
-                    q_conv_actual_kw = 1.2 * self.model.HEARTH_AREA_M2 * (current_roof_temp - current_bath_temp) * h_conv_actual
-                    q_bath_actual_kw = max(0.0, min(q_net_avail_chamber_kw, q_rad_actual_kw + q_conv_actual_kw) - q_hearth_loss_kw)
-                else:
-                    current_roof_temp = roof_target_step
-                    q_conv_actual_kw = 1.2 * self.model.HEARTH_AREA_M2 * (current_roof_temp - current_bath_temp) * h_conv_actual
-                    q_bath_actual_kw = min(q_rad_target_kw + q_conv_actual_kw - q_hearth_loss_kw, q_net_avail_chamber_kw - q_hearth_loss_kw)
+                gas_flow_unclamp = (q_combustion_needed_kw * 3600.0) / self.model.GAS_LHV if self.model.GAS_LHV > 0 else self.min_gas_flow_nm3h
+                gas_flow_nm3h = max(self.min_gas_flow_nm3h, min(max_gas_limit, gas_flow_unclamp))
             else:
-                # Bath is hotter than roof/loss -> cool down
+                # Bath is hotter than roof -> radiating heat back to chamber
+                q_needed_kw = max(0.0, self.model.wall_loss_kw - (-q_rad_target_kw))
+                gas_flow_unclamp = (q_needed_kw * 3600.0) / (eff * self.model.GAS_LHV) if self.model.GAS_LHV > 0 else self.min_gas_flow_nm3h
+                gas_flow_nm3h = max(self.min_gas_flow_nm3h, min(max_gas_limit, gas_flow_unclamp))
+                
+            q_combustion_actual_kw = (gas_flow_nm3h * self.model.GAS_LHV) / 3600.0 if self.model.GAS_LHV > 0 else 0.0
+            q_net_avail_chamber_kw = max(0.0, (q_combustion_actual_kw - self.model.wall_loss_kw) * eff)
+            
+            # Convective heat transfer scaled with actual burner firing gas velocity
+            h_conv_actual = h_base * (0.40 + 0.60 * min(1.0, gas_flow_nm3h / max_gas_limit))
+            
+            # Closed-Loop Feedback: If burner firing rate is saturated, roof temperature rise is throttled by available power
+            if q_net_to_bath_target_kw > 0 and gas_flow_unclamp > max_gas_limit:
+                power_deficit_kw = (q_rad_target_kw + q_conv_target_kw) - q_net_avail_chamber_kw
+                delta_t_roof_drop = (power_deficit_kw * dt_mins * 60.0) / c_roof_eff_kj_k
+                current_roof_temp = max(current_bath_temp + 10.0, roof_target_step - delta_t_roof_drop)
+                
+                # Recalculate heat transfer at physical roof temperature
+                q_rad_actual_kw = self.model.radiant_heat_flux_kw(current_roof_temp, current_bath_temp, is_flat_bath=is_flat_bath)
+                q_conv_actual_kw = 1.2 * self.model.HEARTH_AREA_M2 * (current_roof_temp - current_bath_temp) * h_conv_actual
+                q_bath_actual_kw = max(0.0, min(q_net_avail_chamber_kw, q_rad_actual_kw + q_conv_actual_kw) - q_hearth_loss_kw)
+            else:
                 current_roof_temp = roof_target_step
-                q_combustion_needed_kw = self.model.wall_loss_kw
-                gas_flow_unclamp = (q_combustion_needed_kw * 3600.0) / self.model.GAS_LHV if self.model.GAS_LHV > 0 else 0.0
-                gas_flow_nm3h = min(max_gas_limit, max(self.min_gas_flow_nm3h, gas_flow_unclamp))
-                q_bath_actual_kw = q_net_to_bath_target_kw
+                q_rad_actual_kw = self.model.radiant_heat_flux_kw(current_roof_temp, current_bath_temp, is_flat_bath=is_flat_bath)
+                q_conv_actual_kw = 1.2 * self.model.HEARTH_AREA_M2 * (current_roof_temp - current_bath_temp) * h_conv_actual
+                q_bath_actual_kw = q_rad_actual_kw + q_conv_actual_kw - q_hearth_loss_kw
 
             q_step_kj = q_bath_actual_kw * (dt_mins * 60.0)
             gas_step_nm3 = gas_flow_nm3h * dt_hrs
@@ -246,9 +249,8 @@ class HeatingCurveOptimizer:
             dross_step_kg = min(dross_rate_kghr * dt_hrs, max(0.0, max_dross_kg - cumulative_dross_kg))
             cumulative_dross_kg += dross_step_kg
             
-            # Oxidation exothermic heat released directly into molten bath (kJ)
-            # 4 Al + 3 O2 -> 2 Al2O3 releases ~31.05 MJ/kg Al oxidized (~31050 kJ/kg); dross is ~60% Al oxidized
-            q_ox_step_kj = (dross_step_kg * 0.60 * 31050.0)
+            # Oxidation exothermic heat: ~20% of dross is actual stoichiometric oxide, of which ~30% enters bath
+            q_ox_step_kj = (dross_step_kg * 0.20 * 31050.0) * 0.30
             
             # Bath state progression (combustion net heat + oxidation exothermic heat)
             current_energy_kj += (q_step_kj + q_ox_step_kj)
