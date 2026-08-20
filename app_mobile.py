@@ -249,9 +249,9 @@ def main():
         <div class="mobile-header">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <h2>🔥 80T 熔鋁爐升溫最佳化</h2>
-                <span style="background:rgba(255,255,255,0.25); padding:2px 8px; border-radius:10px; font-size:0.72rem; font-weight:700;">v2.3.2</span>
+                <span style="background:rgba(255,255,255,0.25); padding:2px 8px; border-radius:10px; font-size:0.72rem; font-weight:700;">v2.3.3</span>
             </div>
-            <p>📱 手機即時操作配方與節能試算 (保溫熱平衡無失控版)</p>
+            <p>📱 手機即時操作配方與節能試算 (燃氣/頂溫全時程對應版)</p>
         </div>
     """, unsafe_allow_html=True)
 
