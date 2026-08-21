@@ -32,6 +32,9 @@ subset (verified 35/35 green):
 pytest tests/ -q -k "not data_loader and not real_data and not sensor_week and not health_index"
 ```
 
+`-k` filters on name substrings, so a new data-dependent test named outside those patterns will silently
+rejoin the subset and fail — re-derive the filter if the suite grows.
+
 ## Architecture
 
 ### Data flow
@@ -58,7 +61,7 @@ to collapse the divergence.
 | Tier | Source | Applies when |
 |---|---|---|
 | 1 | hardcoded module fallbacks, `src/physics_model.py:32-61,121-132` | nothing else supplies the value |
-| 2 | `src/calibrated_constants.json` via `load_calibrated_defaults()` (`physics_model.py:15`) | ctor arg left `None` |
+| 2 | `src/calibrated_constants.json` via `load_calibrated_defaults()` (`physics_model.py:15`) | ctor arg left `None` — but not universally: `dross_factor_flat` and `hearth_loss_ref_kw` fall through to bare literals at `physics_model.py:127-128`, so adding those keys to the JSON has no effect |
 | 3 | `config/furnace_parameters.json` via `src/config_manager.py` | **only `app.py` reads this** |
 
 `app.py:336` `get_optimizer_and_evaluator()` passes config values into the ctor *and then re-forces every
@@ -94,8 +97,9 @@ ctors in `try/except TypeError` fallbacks, which will mask a genuine signature e
   net + overhead after. Don't assume one quantity across the dict's lifetime.
 - **`residual_error_gj` is algebraically identically zero.** `calculate_sankey_energy_balance`
   (`physics_model.py:317-334`) derives the flue terms from the input/output difference, so
-  `test_phase1_sankey_strict_energy_conservation` is a tautology and cannot fail. It is not a real
-  conservation guard — don't treat it as one when changing the energy balance.
+  `test_phase1_sankey_strict_energy_conservation` is a tautology whenever the `max(0.1, …)` floor at
+  `physics_model.py:317` doesn't bind. It is not a real conservation guard — don't treat it as one when
+  changing the energy balance.
 - **Every `src/` module uses `try: from src.X ... except ImportError: from X ...`** so it runs both as
   `python -m src.foo` and as a bare script. Match this idiom in new modules.
 - **Alloy lookup is substring-based** (`get_alloy_props`), so `5083A` / `5052KS` / `5182FA` resolve to their
