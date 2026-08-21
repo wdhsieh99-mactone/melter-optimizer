@@ -66,6 +66,6 @@ def test_model_with_custom_config():
         max_gas_flow_single_pair=p_cfg['max_gas_flow_single_pair'],
         min_gas_flow_nm3h=p_cfg['min_gas_flow_nm3h']
     )
-    assert opt.max_gas_flow_dual_pair == 880.0
-    assert opt.max_gas_flow_single_pair == 440.0
+    assert opt.max_gas_flow_dual_pair == 1300.0
+    assert opt.max_gas_flow_single_pair == 650.0
     assert opt.min_gas_flow_nm3h == 50.0

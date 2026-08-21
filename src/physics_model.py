@@ -62,21 +62,21 @@ MAX_PLAUSIBLE_DROSS_RATE_KG_HR = 2167.0
 
 # Alloy Properties Database
 ALLOY_PROPERTIES = {
-    '5052': {'solidus': 607.0, 'liquidus': 650.0, 'latent_heat': 390.0, 'cp_liquid': 1.08, 'dross_mult': 1.8},
-    '5052KS': {'solidus': 607.0, 'liquidus': 650.0, 'latent_heat': 390.0, 'cp_liquid': 1.08, 'dross_mult': 1.8},
-    '5052R3': {'solidus': 607.0, 'liquidus': 650.0, 'latent_heat': 390.0, 'cp_liquid': 1.08, 'dross_mult': 1.8},
-    '5182': {'solidus': 577.0, 'liquidus': 638.0, 'latent_heat': 380.0, 'cp_liquid': 1.05, 'dross_mult': 2.2},
-    '5182FA': {'solidus': 577.0, 'liquidus': 638.0, 'latent_heat': 380.0, 'cp_liquid': 1.05, 'dross_mult': 2.2},
+    '5052': {'solidus': 607.0, 'liquidus': 650.0, 'latent_heat': 390.0, 'cp_liquid': 1.08, 'cp_solid': 1.00, 'dross_mult': 1.8},
+    '5052KS': {'solidus': 607.0, 'liquidus': 650.0, 'latent_heat': 390.0, 'cp_liquid': 1.08, 'cp_solid': 1.00, 'dross_mult': 1.8},
+    '5052R3': {'solidus': 607.0, 'liquidus': 650.0, 'latent_heat': 390.0, 'cp_liquid': 1.08, 'cp_solid': 1.00, 'dross_mult': 1.8},
+    '5182': {'solidus': 577.0, 'liquidus': 638.0, 'latent_heat': 380.0, 'cp_liquid': 1.05, 'cp_solid': 1.00, 'dross_mult': 2.2},
+    '5182FA': {'solidus': 577.0, 'liquidus': 638.0, 'latent_heat': 380.0, 'cp_liquid': 1.05, 'cp_solid': 1.00, 'dross_mult': 2.2},
     # 5083 (Mg 4.0-4.9%): most-produced alloy family in MFA production log (~31% of heats,
     # incl. 5083A/5083L/5083S variants matched via substring in get_alloy_props()).
-    '5083': {'solidus': 574.0, 'liquidus': 638.0, 'latent_heat': 385.0, 'cp_liquid': 1.06, 'dross_mult': 2.1},
-    '6061': {'solidus': 582.0, 'liquidus': 652.0, 'latent_heat': 410.0, 'cp_liquid': 1.10, 'dross_mult': 1.2},
-    '6M02': {'solidus': 582.0, 'liquidus': 652.0, 'latent_heat': 410.0, 'cp_liquid': 1.10, 'dross_mult': 1.2},
-    '3004': {'solidus': 629.0, 'liquidus': 654.0, 'latent_heat': 400.0, 'cp_liquid': 1.09, 'dross_mult': 1.3},
-    '3004R3': {'solidus': 629.0, 'liquidus': 654.0, 'latent_heat': 400.0, 'cp_liquid': 1.09, 'dross_mult': 1.3},
-    '5151': {'solidus': 600.0, 'liquidus': 650.0, 'latent_heat': 390.0, 'cp_liquid': 1.08, 'dross_mult': 1.6},
-    '99.7': {'solidus': 657.0, 'liquidus': 660.0, 'latent_heat': 397.0, 'cp_liquid': 1.08, 'dross_mult': 1.0},
-    'DEFAULT': {'solidus': 600.0, 'liquidus': 650.0, 'latent_heat': 397.0, 'cp_liquid': 1.08, 'dross_mult': 1.4},
+    '5083': {'solidus': 574.0, 'liquidus': 638.0, 'latent_heat': 385.0, 'cp_liquid': 1.06, 'cp_solid': 1.00, 'dross_mult': 2.1},
+    '6061': {'solidus': 582.0, 'liquidus': 652.0, 'latent_heat': 410.0, 'cp_liquid': 1.10, 'cp_solid': 1.00, 'dross_mult': 1.2},
+    '6M02': {'solidus': 582.0, 'liquidus': 652.0, 'latent_heat': 410.0, 'cp_liquid': 1.10, 'cp_solid': 1.00, 'dross_mult': 1.2},
+    '3004': {'solidus': 629.0, 'liquidus': 654.0, 'latent_heat': 400.0, 'cp_liquid': 1.09, 'cp_solid': 1.00, 'dross_mult': 1.3},
+    '3004R3': {'solidus': 629.0, 'liquidus': 654.0, 'latent_heat': 400.0, 'cp_liquid': 1.09, 'cp_solid': 1.00, 'dross_mult': 1.3},
+    '5151': {'solidus': 600.0, 'liquidus': 650.0, 'latent_heat': 390.0, 'cp_liquid': 1.08, 'cp_solid': 1.00, 'dross_mult': 1.6},
+    '99.7': {'solidus': 657.0, 'liquidus': 660.0, 'latent_heat': 397.0, 'cp_liquid': 1.08, 'cp_solid': 1.00, 'dross_mult': 1.0},
+    'DEFAULT': {'solidus': 600.0, 'liquidus': 650.0, 'latent_heat': 397.0, 'cp_liquid': 1.08, 'cp_solid': 1.00, 'dross_mult': 1.4},
 }
 
 
@@ -145,7 +145,7 @@ class MelterPhysicsModel:
         latent_h = props['latent_heat']
         cp_liq = props['cp_liquid']
         
-        cp_solid = 0.90 # kJ/kg*°C
+        cp_solid = props.get('cp_solid', 1.00) # kJ/kg*°C
         
         # Sensible heat solid
         delta_t_solid = max(0.0, min(solidus, target_temp_c) - initial_temp_c)
@@ -193,7 +193,13 @@ class MelterPhysicsModel:
         x_frac = excess_air_pct / 100.0
         return (21.0 * x_frac) / (1.0 + x_frac * 1.05)
 
-    def radiant_heat_flux_kw(self, roof_temp_c: float, bath_temp_c: float, is_flat_bath: bool = False) -> float:
+    def radiant_heat_flux_kw(
+        self,
+        roof_temp_c: float,
+        bath_temp_c: float,
+        is_flat_bath: bool = False,
+        effective_area_m2: Optional[float] = None
+    ) -> float:
         """Calculates radiant heat transfer rate between roof refractory and bath surface (kW).
         Positive when heat flows roof -> bath; negative when bath radiates out.
         Accounts for dross layer thermal resistance (10-30mm oxide layer) once flat molten bath forms.
@@ -201,7 +207,8 @@ class MelterPhysicsModel:
         t_roof_k = roof_temp_c + 273.15
         t_bath_k = bath_temp_c + 273.15
         dross_factor = self.dross_factor_flat if is_flat_bath else 1.0
-        return STEFAN_BOLTZMANN * self.emissivity_eff * self.HEARTH_AREA_M2 * (t_roof_k**4 - t_bath_k**4) * dross_factor
+        area = effective_area_m2 if effective_area_m2 is not None else self.HEARTH_AREA_M2
+        return STEFAN_BOLTZMANN * self.emissivity_eff * area * (t_roof_k**4 - t_bath_k**4) * dross_factor
 
     def bath_bottom_loss_kw(self, bath_temp_c: float) -> float:
         """Heat conduction loss from molten bath to furnace hearth bottom refractory & ambient (kW)."""
@@ -215,7 +222,8 @@ class MelterPhysicsModel:
         bath_temp_c: float,
         alloy_name: str = '5052',
         excess_air_pct: float = 15.0,
-        is_flat_bath: bool = False
+        is_flat_bath: bool = False,
+        scrap_cleanliness_factor: float = 1.0
     ) -> float:
         """Estimates alloy-specific dross oxidation rate (kg/hr) considering furnace oxygen partial pressure."""
         props = get_alloy_props(alloy_name)
@@ -233,8 +241,27 @@ class MelterPhysicsModel:
         o2_factor = (o2_pct / 2.0) ** 0.5
         
         multiplier = 2.5 if is_flat_bath else 1.0
-        rate = rate_base * multiplier * dross_mult * o2_factor
+        rate = rate_base * multiplier * dross_mult * o2_factor * scrap_cleanliness_factor
         return min(MAX_PLAUSIBLE_DROSS_RATE_KG_HR, max(0.1, rate))
+
+    def oxidation_heat_to_bath_kj(self, dross_step_kg: float) -> float:
+        """Calculates exothermic heat from aluminum oxidation transferred to molten bath (kJ).
+        
+        Unified formula used by both simulate_trajectory and Sankey energy balance.
+        
+        Physics:
+        - Dross composition: ~40% metallic Al entrapped + ~60% oxide/flux (industry typical)
+        - Al oxidation reaction: 4Al + 3O2 -> 2Al2O3, releases 31.05 MJ/kg-Al
+        - Heat partition: ~35% of reaction heat transfers to bath, rest to furnace gases
+        
+        v2.4.0: Unified from two inconsistent formulas (optimizer used 0.20*31050*0.30,
+        Sankey used 0.60*31050). Now uses physically consistent parameters.
+        """
+        al_fraction_in_dross = 0.40  # fraction of dross that is metallic Al being oxidized
+        al_oxidation_heat_kj_per_kg = 31050.0  # kJ/kg-Al oxidized (4Al+3O2->2Al2O3)
+        heat_to_bath_fraction = 0.35  # fraction of reaction heat transferred to bath
+        
+        return dross_step_kg * al_fraction_in_dross * al_oxidation_heat_kj_per_kg * heat_to_bath_fraction
 
     def compute_heat_cost(self, gas_nm3: float, dross_kg: float) -> Dict[str, float]:
         """Calculates cost breakdown (TWD) accounting for metal recovery from dross."""
@@ -270,12 +297,14 @@ class MelterPhysicsModel:
         liquidus = props['liquidus']
         latent_h = props['latent_heat']
         cp_liq = props['cp_liquid']
-        cp_solid = 0.90 # kJ/kg*K
+        cp_solid = props.get('cp_solid', 1.00) # kJ/kg*K
         
         # 1. Primary Chemical & Exothermic Inputs
         q_fuel_gj = (cum_gas_nm3 * self.GAS_LHV) / 1e6
-        # Dross exothermic oxidation heat (4 Al + 3 O2 -> 2 Al2O3 releases ~31.05 MJ/kg Al oxidized)
-        q_ox_gj = (cum_dross_kg * 0.60 * 31.05) / 1000.0
+        # Dross exothermic oxidation heat (v2.4.0: unified formula, total reaction heat not just bath portion)
+        # For Sankey: use TOTAL oxidation heat (not just bath portion), since Sankey tracks all energy flows
+        al_fraction_in_dross = 0.40  # same as oxidation_heat_to_bath_kj
+        q_ox_gj = (cum_dross_kg * al_fraction_in_dross * 31.05) / 1000.0
         
         # 2. Output Sinks (Metal & Furnace Enthalpy Sinks)
         total_metal_kg = charged_weight_kg + residual_weight_kg

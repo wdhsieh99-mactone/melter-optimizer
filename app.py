@@ -235,75 +235,82 @@ def build_sankey_figure(sankey_data: dict, title: str = "熔煉爐全爐熱平�
     """Constructs an interactive Plotly Sankey diagram representing full furnace heat balance."""
     q_fuel = max(0.01, sankey_data['q_fuel_gj'])
     q_ox = max(0.01, sankey_data['q_ox_gj'])
-    q_air_preheat = max(0.01, sankey_data['q_air_preheat_gj'])
     q_al = max(0.01, sankey_data['q_al_absorbed_gj'])
     q_dross_sens = max(0.01, sankey_data['q_dross_sensible_gj'])
     q_wall = max(0.01, sankey_data['q_wall_hearth_gj'])
+    q_overhead = max(0.01, sankey_data.get('q_overhead_thermal_gj', 0.0))
     q_roof_leak = max(0.01, sankey_data['q_roof_exhaust_gj'])
     q_bed_flue = max(0.01, sankey_data['q_bed_flue_in_gj'])
+    q_air_preheat = max(0.01, sankey_data['q_air_preheat_gj'])
     q_stack = max(0.01, sankey_data['q_stack_loss_gj'])
     
-    q_total = max(0.01, q_fuel + q_ox + q_air_preheat)
+    q_chamber_in = max(0.01, sankey_data['total_chamber_input_gj'])
     
     labels = [
-        f"1. 燃料燃燒熱: {q_fuel:.1f} GJ ({q_fuel/q_total*100:.1f}%)",                 # 0
-        f"2. 鋁/鎂氧化熱: {q_ox:.1f} GJ ({q_ox/q_total*100:.1f}%)",                   # 1
-        f"3. 預熱助燃空氣: {q_air_preheat:.1f} GJ ({q_air_preheat/q_total*100:.1f}%)", # 2
-        f"4. 爐膛熱交換中心: {q_total:.1f} GJ (100%)",                                 # 3
-        f"5. 鋁液有效吸熱: {q_al:.1f} GJ ({q_al/q_total*100:.1f}%)",                  # 4
-        f"6. 鋁渣升溫顯熱: {q_dross_sens:.1f} GJ ({q_dross_sens/q_total*100:.1f}%)",   # 5
-        f"7. 爐壁爐底散熱: {q_wall:.1f} GJ ({q_wall/q_total*100:.1f}%)",               # 6
-        f"8. 爐頂逸散煙氣: {q_roof_leak:.1f} GJ ({q_roof_leak/q_total*100:.1f}%)",     # 7
-        f"9. 進入蓄熱床煙氣: {q_bed_flue:.1f} GJ ({q_bed_flue/q_total*100:.1f}%)",     # 8
-        f"10. 煙囪排煙損失: {q_stack:.1f} GJ ({q_stack/q_total*100:.1f}%)",            # 9
+        f"1. 天然氣燃料燃燒熱: {q_fuel:.1f} GJ",                 # 0
+        f"2. 鋁/鎂金屬氧化放熱: {q_ox:.1f} GJ",                   # 1
+        f"3. 蓄熱床預熱助燃空氣熱: {q_air_preheat:.1f} GJ",       # 2 (From 9a)
+        f"【爐膛總熱交換中心】: {q_chamber_in:.1f} GJ (100%)",   # 3 (Central node)
+        f"4. 鋁金屬熔解與升溫: {q_al:.1f} GJ ({q_al/q_chamber_in*100:.1f}%)", # 4
+        f"5. 鋁渣升溫吸收顯熱: {q_dross_sens:.1f} GJ ({q_dross_sens/q_chamber_in*100:.1f}%)", # 5
+        f"6. 爐壁與爐底導熱損: {q_wall:.1f} GJ ({q_wall/q_chamber_in*100:.1f}%)", # 6
+        f"7. 操作附加熱損: {q_overhead:.1f} GJ ({q_overhead/q_chamber_in*100:.1f}%)", # 7
+        f"8. 爐頂/爐門逸散煙氣: {q_roof_leak:.1f} GJ ({q_roof_leak/q_chamber_in*100:.1f}%)", # 8
+        f"9. 進入蓄熱箱高溫煙氣: {q_bed_flue:.1f} GJ", # 9
+        f"9b. 煙囪低溫排煙熱損: {q_stack:.1f} GJ ({q_stack/q_chamber_in*100:.1f}%)", # 10
+        f"9a. 蓄熱床預熱空氣回收: {q_air_preheat:.1f} GJ ({q_air_preheat/q_chamber_in*100:.1f}%)", # 11
     ]
     
     node_colors = [
-        "#1E88E5",  # Fuel - Blue
-        "#FB8C00",  # Dross Ox - Orange
-        "#00ACC1",  # Preheat Air - Cyan
-        "#5E35B1",  # Chamber - Deep Purple
-        "#43A047",  # Molten Al - Emerald Green
-        "#FFA726",  # Dross Sensible - Light Orange
-        "#8D6E63",  # Wall/Hearth - Brown
-        "#E53935",  # Roof Leak - Red
-        "#7E57C2",  # Flue to Beds - Purple
-        "#78909C",  # Stack Loss - Grey Blue
+        "#1E88E5",  # 0 Fuel
+        "#FB8C00",  # 1 Ox
+        "#00ACC1",  # 2 Air Preheat (Cyan)
+        "#5E35B1",  # 3 Chamber (Purple)
+        "#43A047",  # 4 Al
+        "#FFA726",  # 5 Dross
+        "#8D6E63",  # 6 Wall
+        "#FDD835",  # 7 Overhead
+        "#E53935",  # 8 Roof Leak
+        "#D81B60",  # 9 Flue to Regenerator (Pink/Red)
+        "#78909C",  # 10 Stack
+        "#00838F",  # 11 9a Recycle Node (Darker Cyan)
     ]
     
-    sources = [0, 1, 2, 3, 3, 3, 3, 3, 8, 8]
-    targets = [3, 3, 3, 4, 5, 6, 7, 8, 2, 9]
+    sources = [
+        0, 1, 2,          # Inputs to Chamber
+        3, 3, 3, 3, 3, 3, # Outputs from Chamber
+        9, 9,             # Splits from Regenerator Flue
+        11                # 9a flows into 3 (Air Preheat)
+    ]
+    targets = [
+        3, 3, 3,          # Target is Chamber
+        4, 5, 6, 7, 8, 9, # Targets are the output nodes
+        11, 10,           # 9 splits to 9a(11) and 9b(10)
+        2                 # 9a(11) goes to 3(2)
+    ]
     values = [
         q_fuel, q_ox, q_air_preheat,
-        q_al, q_dross_sens, q_wall, q_roof_leak, q_bed_flue,
-        q_air_preheat, q_stack
+        q_al, q_dross_sens, q_wall, q_overhead, q_roof_leak, q_bed_flue,
+        q_air_preheat, q_stack,
+        q_air_preheat
     ]
     
     link_colors = [
-        "rgba(30, 136, 229, 0.40)",   # Fuel
-        "rgba(251, 140, 0, 0.40)",   # Ox
-        "rgba(0, 172, 193, 0.40)",   # Preheat
-        "rgba(67, 160, 71, 0.50)",    # Al
-        "rgba(255, 167, 38, 0.40)",  # Dross
-        "rgba(141, 110, 99, 0.40)",  # Wall
-        "rgba(229, 57, 53, 0.40)",   # Roof leak
-        "rgba(126, 87, 194, 0.40)",  # Flue bed
-        "rgba(0, 172, 193, 0.45)",   # Recycle
-        "rgba(120, 144, 156, 0.40)", # Stack
+        "rgba(30, 136, 229, 0.40)",   # Fuel -> Chamber
+        "rgba(251, 140, 0, 0.40)",    # Ox -> Chamber
+        "rgba(0, 172, 193, 0.50)",    # Preheat -> Chamber
+        "rgba(67, 160, 71, 0.50)",    # Chamber -> Al
+        "rgba(255, 167, 38, 0.40)",   # Chamber -> Dross
+        "rgba(141, 110, 99, 0.40)",   # Chamber -> Wall
+        "rgba(253, 216, 53, 0.40)",   # Chamber -> Overhead
+        "rgba(229, 57, 53, 0.40)",    # Chamber -> Roof leak
+        "rgba(216, 27, 96, 0.40)",    # Chamber -> Flue to Bed
+        "rgba(0, 131, 143, 0.40)",    # Flue -> 9a Recycle
+        "rgba(120, 144, 156, 0.40)",  # Flue -> 9b Stack
+        "rgba(0, 172, 193, 0.40)",    # 9a -> 3
     ]
     
-    custom_nodes = [
-        f"{q_fuel:.2f} GJ ({q_fuel/q_total*100:.1f}%)",
-        f"{q_ox:.2f} GJ ({q_ox/q_total*100:.1f}%)",
-        f"{q_air_preheat:.2f} GJ ({q_air_preheat/q_total*100:.1f}%)",
-        f"{q_total:.2f} GJ (100%)",
-        f"{q_al:.2f} GJ ({q_al/q_total*100:.1f}%)",
-        f"{q_dross_sens:.2f} GJ ({q_dross_sens/q_total*100:.1f}%)",
-        f"{q_wall:.2f} GJ ({q_wall/q_total*100:.1f}%)",
-        f"{q_roof_leak:.2f} GJ ({q_roof_leak/q_total*100:.1f}%)",
-        f"{q_bed_flue:.2f} GJ ({q_bed_flue/q_total*100:.1f}%)",
-        f"{q_stack:.2f} GJ ({q_stack/q_total*100:.1f}%)"
-    ]
+    custom_nodes = labels
     
     fig = go.Figure(data=[go.Sankey(
         node=dict(
@@ -417,7 +424,7 @@ def main():
     st.title("🔥 80T 反射式熔鋁爐升溫曲線與空燃比最佳化系統")
     st.markdown(
         '<div style="background:linear-gradient(90deg, #E3F2FD 0%, #BBDEFB 100%); padding:6px 14px; border-radius:6px; border-left:5px solid #1976D2; margin-bottom:8px; font-size:0.92rem; font-weight:600; color:#0D47A1; display:flex; justify-content:space-between; align-items:center;">'
-        '<span>🚀 系統版本: <b>v2.3.3</b> (燃氣流量/頂溫設點嚴格對應 & 無人工截斷版)</span>'
+        '<span>🚀 系統版本: <b>v2.4.0</b> (物理模型校正與閉環控制修正版)</span>'
         '<span style="background:#1976D2; color:white; padding:2px 8px; border-radius:10px; font-size:0.78rem;">115.08.20 Release</span>'
         '</div>',
         unsafe_allow_html=True
@@ -1255,10 +1262,11 @@ def main():
                     "🔸 4. 鋁金屬熔解與升溫有效吸收熱 (Molten Aluminum Sensible + Latent)",
                     "🔸 5. 鋁渣升溫吸收顯熱 (Dross Sensible Heat)",
                     "🔸 6. 爐壁散熱與爐底耐火材導熱損 (Wall & Hearth Losses)",
-                    "🔸 7. 爐頂/爐門逸散未回收煙氣熱 (Roof & Door Leakage Exhaust)",
-                    "🔸 8. 進入蓄熱箱高溫煙氣熱 (Flue Gas to Regenerator Beds)",
-                    "    └ 8a. 蓄熱床預熱空氣回收 (Recycled to Preheated Air)",
-                    "    └ 8b. 煙囪最終低溫排煙熱損 (Final Stack Loss to Chimney)",
+                    "🔸 7. 操作附加熱損 (Operational Overhead Losses)",
+                    "🔸 8. 爐頂/爐門逸散未回收煙氣熱 (Roof & Door Leakage Exhaust)",
+                    "🔸 9. 進入蓄熱箱高溫煙氣熱 (Flue Gas to Regenerator Beds)",
+                    "    └ 9a. 蓄熱床預熱空氣回收 (Recycled to Preheated Air)",
+                    "    └ 9b. 煙囪最終低溫排煙熱損 (Final Stack Loss to Chimney)",
                     "🔥 【爐膛總熱輸出 (Total Chamber Output)】"
                 ],
                 "熱量 (GJ)": [
@@ -1270,6 +1278,7 @@ def main():
                     f"{s_data['q_al_absorbed_gj']:.2f} GJ",
                     f"{s_data['q_dross_sensible_gj']:.2f} GJ",
                     f"{s_data['q_wall_hearth_gj']:.2f} GJ",
+                    f"{s_data.get('q_overhead_thermal_gj', 0.0):.2f} GJ",
                     f"{s_data['q_roof_exhaust_gj']:.2f} GJ",
                     f"{s_data['q_bed_flue_in_gj']:.2f} GJ",
                     f"{s_data['q_air_preheat_gj']:.2f} GJ",
@@ -1285,10 +1294,11 @@ def main():
                     f"{s_data['q_al_absorbed_gj']/s_data['total_chamber_output_gj']*100:.1f} %",
                     f"{s_data['q_dross_sensible_gj']/s_data['total_chamber_output_gj']*100:.1f} %",
                     f"{s_data['q_wall_hearth_gj']/s_data['total_chamber_output_gj']*100:.1f} %",
+                    f"{s_data.get('q_overhead_thermal_gj', 0.0)/s_data['total_chamber_output_gj']*100:.1f} %",
                     f"{s_data['q_roof_exhaust_gj']/s_data['total_chamber_output_gj']*100:.1f} %",
-                    f"{s_data['q_bed_flue_in_gj']/s_data['total_chamber_output_gj']*100:.1f} %",
-                    f"({s_data['q_air_preheat_gj']/s_data['total_chamber_output_gj']*100:.1f} %)",
-                    f"({s_data['q_stack_loss_gj']/s_data['total_chamber_output_gj']*100:.1f} %)",
+                    "-",
+                    f"{s_data['q_air_preheat_gj']/s_data['total_chamber_output_gj']*100:.1f} %",
+                    f"{s_data['q_stack_loss_gj']/s_data['total_chamber_output_gj']*100:.1f} %",
                     "100.0 %",
                 ]
             })

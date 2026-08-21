@@ -169,17 +169,17 @@ def test_phase1_latent_heat_piecewise_logic():
     weight = 1000.0
     # 1. Below solidus (e.g. 500°C) -> latent heat must be 0
     res_solid = model.calculate_theoretical_energy(weight, alloy_name='5052', initial_temp_c=25.0, target_temp_c=500.0)
-    expected_sensible = weight * 0.90 * (500.0 - 25.0)
+    expected_sensible = weight * 1.0 * (500.0 - 25.0)
     assert res_solid['total_energy_kj'] == expected_sensible
 
     # 2. Above liquidus (e.g. 720°C) -> 100% latent heat + liquid sensible
     res_liq = model.calculate_theoretical_energy(weight, alloy_name='5052', initial_temp_c=25.0, target_temp_c=720.0)
-    expected_total = (weight * 0.90 * (607.0 - 25.0)) + (weight * 390.0) + (weight * 1.08 * (720.0 - 650.0))
+    expected_total = (weight * 1.00 * (607.0 - 25.0)) + (weight * 390.0) + (weight * 1.08 * (720.0 - 650.0))
     assert res_liq['total_energy_kj'] == expected_total
 
     # 3. In mushy zone (e.g. 628.5°C, halfway between 607 and 650) -> 50% latent heat
     res_mushy = model.calculate_theoretical_energy(weight, alloy_name='5052', initial_temp_c=25.0, target_temp_c=628.5)
-    expected_mushy = (weight * 0.90 * (607.0 - 25.0)) + (weight * 390.0 * 0.5)
+    expected_mushy = (weight * 1.00 * (607.0 - 25.0)) + (weight * 390.0 * 0.5)
     assert abs(res_mushy['total_energy_kj'] - expected_mushy) < 1e-3
 
 
@@ -277,6 +277,47 @@ def test_phase2_combustion_efficiency_gradient():
     assert eff_low_temp > eff_mid_temp > eff_high_temp
     assert 0.50 <= eff_high_temp <= 0.78
     assert 0.50 <= eff_low_temp <= 0.78
+
+
+def test_u1_effective_area_parameter():
+    model = MelterPhysicsModel()
+    q_full = model.radiant_heat_flux_kw(1150.0, 300.0, is_flat_bath=False)
+    q_half = model.radiant_heat_flux_kw(1150.0, 300.0, is_flat_bath=False, effective_area_m2=model.HEARTH_AREA_M2 * 0.5)
+    assert abs(q_half - q_full * 0.5) < 1e-6
+
+
+def test_u2_alloy_properties_cp_solid():
+    for alloy_key, props in ALLOY_PROPERTIES.items():
+        assert props.get('cp_solid') == 1.00, f"Alloy {alloy_key} should have cp_solid == 1.00"
+
+
+def test_u3_scrap_cleanliness_factor():
+    model = MelterPhysicsModel()
+    rate_1 = model.dross_burnoff_rate_kg_hr(1150.0, 720.0, alloy_name='5052', scrap_cleanliness_factor=1.0)
+    rate_2 = model.dross_burnoff_rate_kg_hr(1150.0, 720.0, alloy_name='5052', scrap_cleanliness_factor=1.5)
+    assert abs(rate_2 - rate_1 * 1.5) < 1e-4
+
+    opt = HeatingCurveOptimizer(model)
+    df_clean, sum_clean = opt.simulate_trajectory(65000.0, 6.0, 1150.0, 4.0, 780.0, scrap_cleanliness_factor=1.0)
+    df_dirty, sum_dirty = opt.simulate_trajectory(65000.0, 6.0, 1150.0, 4.0, 780.0, scrap_cleanliness_factor=1.5)
+    assert sum_dirty['cum_dross_kg'] > sum_clean['cum_dross_kg']
+
+
+def test_u4_early_melt_target_switching():
+    opt = HeatingCurveOptimizer()
+    # When bath temperature reaches target_bath_temp_c + 10.0 early, phase switches to Hold
+    df, _ = opt.simulate_trajectory(
+        charged_weight_kg=1000.0,
+        residual_weight_kg=64000.0,
+        residual_temp_c=795.0,
+        target_duration_hrs=6.0,
+        sp_roof_melt=1200.0,
+        t_switch_hrs=5.0,
+        sp_roof_hold=780.0,
+        target_bath_temp_c=700.0,
+    )
+    assert df['phase'].iloc[1] != '第1段: 主熔化段 (Melt)'
+
 
 
 

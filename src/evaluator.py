@@ -43,7 +43,7 @@ class MelterEvaluator:
         self.optimizer = optimizer if optimizer is not None else HeatingCurveOptimizer()
 
     def run_backtest_on_sensor_week(
-        self, target_bath_temp_c: float = 720.0, dt_mins: float = 1.0,
+        self, target_bath_temp_c: float = 780.0, dt_mins: float = 1.0,  # v2.4.0: aligned with field target (was 720.0)
     ) -> Tuple[pd.DataFrame, Dict[str, float]]:
         """Backtests against the ~20 real heats covered by the 5-second MFA sensor CSV, using
         real integrated gas flow (both burner pairs) as ground truth."""
@@ -63,7 +63,7 @@ class MelterEvaluator:
         )
 
     def run_backtest_on_production_log(
-        self, sample_n: int = 40, random_state: int = 7, target_bath_temp_c: float = 720.0, dt_mins: float = 3.0,
+        self, sample_n: int = 40, random_state: int = 7, target_bath_temp_c: float = 780.0, dt_mins: float = 3.0,  # v2.4.0: aligned with field target (was 720.0)
     ) -> Tuple[pd.DataFrame, Dict[str, float]]:
         """Backtests against a larger, outlier-filtered sample of the full production log,
         using logged actual gas (MF本爐燃耗) and real per-heat yield loss as ground truth."""

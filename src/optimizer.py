@@ -84,6 +84,7 @@ class HeatingCurveOptimizer:
         residual_temp_c: Optional[float] = None,
         sp_roof_soak: Optional[float] = None,
         t_soak_end_hrs: Optional[float] = None,
+        scrap_cleanliness_factor: float = 1.0,
     ) -> Tuple[pd.DataFrame, Dict[str, float]]:
         """Simulates time-step thermodynamic progression with alloy properties & 4-burner 2-pair states."""
         dt_hrs = dt_mins / 60.0
@@ -94,7 +95,7 @@ class HeatingCurveOptimizer:
         liquidus = props['liquidus']
         latent_h = props['latent_heat']
         cp_liq = props['cp_liquid']
-        cp_solid = 0.90
+        cp_solid = props.get('cp_solid', 1.00)
 
         if residual_temp_c is None:
             residual_temp_c = liquidus
@@ -148,12 +149,13 @@ class HeatingCurveOptimizer:
             t_mid = (step - 0.5) * dt_hrs
             
             # Stepwise Discrete Multi-Step Setpoint Profile evaluated at midpoint of interval
-            if t_mid < t_switch_hrs:
+            # v2.4.0: Auto-switch to Hold if bath temperature reaches target early
+            if t_mid < t_switch_hrs and (current_bath_temp < target_bath_temp_c + 10.0):
                 sp_roof = sp_roof_melt
                 phase = '第1段: 主熔化段 (Melt)'
                 burner_mode = 'Dual Pair (交替全火)'
                 max_gas_limit = self.max_gas_flow_dual_pair
-            elif t_soak_end_hrs is not None and sp_roof_soak is not None and t_mid < t_soak_end_hrs:
+            elif t_soak_end_hrs is not None and sp_roof_soak is not None and t_mid < t_soak_end_hrs and (current_bath_temp < target_bath_temp_c + 10.0):
                 sp_roof = sp_roof_soak
                 phase = '第2段: 平湯昇溫段 (Flat Bath)'
                 burner_mode = 'Dual Pair (交替中火)'
@@ -171,12 +173,16 @@ class HeatingCurveOptimizer:
             
             is_flat_bath = (current_bath_temp >= liquidus)
 
+            # Dynamic effective area for scrap pile shadow factor (U1)
+            f_area = 0.5 + 0.5 * max(0.0, min(1.0, (current_bath_temp - 25.0) / max(1.0, liquidus - 25.0)))
+            effective_area_m2 = self.model.HEARTH_AREA_M2 * f_area
+
             # Heat transfer between target roof space and bath (Radiant + Dynamic Convection - Hearth Loss)
             h_base = 0.010 if is_flat_bath else 0.015
             temp_drive_ratio = min(1.0, max(0.1, (roof_target_step - current_bath_temp) / 500.0))
             h_conv_target = h_base * (0.40 + 0.60 * temp_drive_ratio)
-            q_rad_target_kw = self.model.radiant_heat_flux_kw(roof_target_step, current_bath_temp, is_flat_bath=is_flat_bath)
-            q_conv_target_kw = 1.2 * self.model.HEARTH_AREA_M2 * (roof_target_step - current_bath_temp) * h_conv_target
+            q_rad_target_kw = self.model.radiant_heat_flux_kw(roof_target_step, current_bath_temp, is_flat_bath=is_flat_bath, effective_area_m2=effective_area_m2)
+            q_conv_target_kw = 1.2 * effective_area_m2 * (roof_target_step - current_bath_temp) * h_conv_target
             q_hearth_loss_kw = self.model.bath_bottom_loss_kw(current_bath_temp)
             q_net_to_bath_target_kw = q_rad_target_kw + q_conv_target_kw - q_hearth_loss_kw
             
@@ -204,21 +210,20 @@ class HeatingCurveOptimizer:
             # Convective heat transfer scaled with actual burner firing gas velocity
             h_conv_actual = h_base * (0.40 + 0.60 * min(1.0, gas_flow_nm3h / max_gas_limit))
             
-            # Closed-Loop Feedback: If burner firing rate is saturated, roof temperature rise is throttled by available power
-            if (q_rad_target_kw + q_conv_target_kw > 0) and (gas_flow_unclamp > max_gas_limit):
-                power_deficit_kw = (q_rad_target_kw + q_conv_target_kw) - q_net_avail_chamber_kw
-                delta_t_roof_drop = (power_deficit_kw * dt_mins * 60.0) / c_roof_eff_kj_k
-                current_roof_temp = min(roof_target_step, max(current_bath_temp + 10.0, roof_target_step - delta_t_roof_drop))
-                
-                # Recalculate heat transfer at physical roof temperature
-                q_rad_actual_kw = self.model.radiant_heat_flux_kw(current_roof_temp, current_bath_temp, is_flat_bath=is_flat_bath)
-                q_conv_actual_kw = 1.2 * self.model.HEARTH_AREA_M2 * (current_roof_temp - current_bath_temp) * h_conv_actual
-                q_bath_actual_kw = max(0.0, min(q_net_avail_chamber_kw, q_rad_actual_kw + q_conv_actual_kw) - q_hearth_loss_kw)
-            else:
-                current_roof_temp = roof_target_step
-                q_rad_actual_kw = self.model.radiant_heat_flux_kw(current_roof_temp, current_bath_temp, is_flat_bath=is_flat_bath)
-                q_conv_actual_kw = 1.2 * self.model.HEARTH_AREA_M2 * (current_roof_temp - current_bath_temp) * h_conv_actual
-                q_bath_actual_kw = q_rad_actual_kw + q_conv_actual_kw - q_hearth_loss_kw
+            # Closed-Loop Feedback: Physical energy balance for the roof
+            # Heat transfer to bath based on current temperatures
+            q_rad_actual_kw = self.model.radiant_heat_flux_kw(current_roof_temp, current_bath_temp, is_flat_bath=is_flat_bath, effective_area_m2=effective_area_m2)
+            q_conv_actual_kw = 1.2 * effective_area_m2 * (current_roof_temp - current_bath_temp) * h_conv_actual
+            
+            # Remaining energy goes into heating the roof refractory
+            q_to_roof_kw = q_net_avail_chamber_kw - (q_rad_actual_kw + q_conv_actual_kw)
+            delta_t_roof = (q_to_roof_kw * dt_mins * 60.0) / c_roof_eff_kj_k
+            
+            # Update physical roof temperature
+            current_roof_temp = max(current_bath_temp, current_roof_temp + delta_t_roof)
+            
+            # Net heat into the bath
+            q_bath_actual_kw = q_rad_actual_kw + q_conv_actual_kw - q_hearth_loss_kw
 
             q_step_kj = q_bath_actual_kw * (dt_mins * 60.0)
             gas_step_nm3 = gas_flow_nm3h * dt_hrs
@@ -230,15 +235,16 @@ class HeatingCurveOptimizer:
                 bath_temp_c=current_bath_temp,
                 alloy_name=alloy_name,
                 excess_air_pct=excess_air_pct,
-                is_flat_bath=is_flat_bath
+                is_flat_bath=is_flat_bath,
+                scrap_cleanliness_factor=scrap_cleanliness_factor,
             )
             # Mass conservation guardrail: cumulative dross cannot exceed 20% of total charged metal
             max_dross_kg = total_weight_kg * 0.20
             dross_step_kg = min(dross_rate_kghr * dt_hrs, max(0.0, max_dross_kg - cumulative_dross_kg))
             cumulative_dross_kg += dross_step_kg
             
-            # Oxidation exothermic heat: ~20% of dross is actual stoichiometric oxide, of which ~30% enters bath
-            q_ox_step_kj = (dross_step_kg * 0.20 * 31050.0) * 0.30
+            # Oxidation exothermic heat transferred to bath (v2.4.0: unified formula)
+            q_ox_step_kj = self.model.oxidation_heat_to_bath_kj(dross_step_kg)
             
             # Bath state progression (combustion net heat + oxidation exothermic heat)
             current_energy_kj += (q_step_kj + q_ox_step_kj)
@@ -294,6 +300,7 @@ class HeatingCurveOptimizer:
         baseline_sp_soak: Optional[float] = None,
         baseline_dur_soak_hrs: Optional[float] = 0.0,
         baseline_sp_hold: float = 780.0,
+        scrap_cleanliness_factor: float = 1.0,
     ) -> Tuple[pd.DataFrame, Dict[str, float]]:
         """Simulates baseline plant practice:
         Step 1: 0 to baseline_dur_melt_hrs (Default: target_duration_hrs, 1180°C continuous to end).
@@ -320,6 +327,7 @@ class HeatingCurveOptimizer:
                 dt_mins=dt_mins,
                 residual_weight_kg=residual_weight_kg,
                 residual_temp_c=residual_temp_c,
+                scrap_cleanliness_factor=scrap_cleanliness_factor,
             )
         else:
             return self.simulate_trajectory(
@@ -334,6 +342,7 @@ class HeatingCurveOptimizer:
                 dt_mins=dt_mins,
                 residual_weight_kg=residual_weight_kg,
                 residual_temp_c=residual_temp_c,
+                scrap_cleanliness_factor=scrap_cleanliness_factor,
             )
 
     def optimize_heating_curve(
@@ -359,6 +368,7 @@ class HeatingCurveOptimizer:
         reversal_loss_pct: float = 4.0,
         refractory_reheat_gj: float = 7.0,
         actual_total_duration_hrs: Optional[float] = None,
+        scrap_cleanliness_factor: float = 1.0,
         **kwargs
     ) -> Dict:
         """Finds the optimal discrete multi-step schedule (Step 1 Melt -> Step 2 Flat -> Step 3 Hold)
@@ -400,6 +410,7 @@ class HeatingCurveOptimizer:
                                 residual_temp_c=residual_temp_c,
                                 excess_air_pct=ex_air,
                                 dt_mins=dt_mins,
+                                scrap_cleanliness_factor=scrap_cleanliness_factor,
                             )
                             # Primary constraint: must reach target bath temp within deadline
                             if summary['final_bath_temp_c'] >= (target_bath_temp_c - TARGET_TEMP_TOLERANCE_C):
@@ -424,6 +435,7 @@ class HeatingCurveOptimizer:
                 residual_temp_c=residual_temp_c,
                 excess_air_pct=baseline_excess_air_pct,
                 dt_mins=dt_mins,
+                scrap_cleanliness_factor=scrap_cleanliness_factor,
             )
             best_params = (max_roof_sp_limit, discharge_deadline_hrs * 0.60, 1000.0, discharge_deadline_hrs * 0.85, 780.0, baseline_excess_air_pct)
             best_df_sim = df_sim
@@ -445,6 +457,7 @@ class HeatingCurveOptimizer:
             baseline_dur_soak_hrs=baseline_dur_soak_hrs,
             baseline_sp_hold=baseline_sp_hold,
             target_bath_temp_c=target_bath_temp_c,
+            scrap_cleanliness_factor=scrap_cleanliness_factor,
         )
 
         # Field Operational Overhead Losses Calculation
