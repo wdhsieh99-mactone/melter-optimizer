@@ -171,47 +171,90 @@ st.markdown("""
 def build_sankey_figure(sankey_data: dict, title: str = "熔煉爐全爐熱平衡能流圖 (Sankey Diagram)"):
     q_fuel = max(0.01, sankey_data['q_fuel_gj'])
     q_ox = max(0.01, sankey_data['q_ox_gj'])
-    q_air_preheat = max(0.01, sankey_data['q_air_preheat_gj'])
     q_al = max(0.01, sankey_data['q_al_absorbed_gj'])
     q_dross_sens = max(0.01, sankey_data['q_dross_sensible_gj'])
     q_wall = max(0.01, sankey_data['q_wall_hearth_gj'])
+    q_overhead = max(0.01, sankey_data.get('q_overhead_thermal_gj', 0.0))
     q_roof_leak = max(0.01, sankey_data['q_roof_exhaust_gj'])
     q_bed_flue = max(0.01, sankey_data['q_bed_flue_in_gj'])
+    q_air_preheat = max(0.01, sankey_data['q_air_preheat_gj'])
     q_stack = max(0.01, sankey_data['q_stack_loss_gj'])
     
-    q_total = max(0.01, q_fuel + q_ox + q_air_preheat)
+    q_chamber_in = max(0.01, sankey_data['total_chamber_input_gj'])
     
     labels = [
-        f"1. 燃料燃燒熱: {q_fuel:.1f} GJ ({q_fuel/q_total*100:.1f}%)",
-        f"2. 鋁/鎂氧化熱: {q_ox:.1f} GJ ({q_ox/q_total*100:.1f}%)",
-        f"3. 預熱助燃空氣: {q_air_preheat:.1f} GJ ({q_air_preheat/q_total*100:.1f}%)",
-        f"4. 爐膛熱交換中心: {q_total:.1f} GJ (100%)",
-        f"5. 鋁液有效吸熱: {q_al:.1f} GJ ({q_al/q_total*100:.1f}%)",
-        f"6. 鋁渣升溫顯熱: {q_dross_sens:.1f} GJ ({q_dross_sens/q_total*100:.1f}%)",
-        f"7. 爐壁爐底散熱: {q_wall:.1f} GJ ({q_wall/q_total*100:.1f}%)",
-        f"8. 爐頂逸散煙氣: {q_roof_leak:.1f} GJ ({q_roof_leak/q_total*100:.1f}%)",
-        f"9. 進入蓄熱床煙氣: {q_bed_flue:.1f} GJ ({q_bed_flue/q_total*100:.1f}%)",
-        f"10. 煙囪排煙損失: {q_stack:.1f} GJ ({q_stack/q_total*100:.1f}%)",
+        f"1. 天然氣燃料燃燒熱: {q_fuel:.1f} GJ",                 # 0
+        f"2. 鋁/鎂金屬氧化放熱: {q_ox:.1f} GJ",                   # 1
+        f"3. 蓄熱床預熱助燃空氣熱: {q_air_preheat:.1f} GJ",       # 2 (From 9a)
+        f"【爐膛總熱交換中心】: {q_chamber_in:.1f} GJ (100%)",   # 3 (Central node)
+        f"4. 鋁金屬熔解與升溫: {q_al:.1f} GJ ({q_al/q_chamber_in*100:.1f}%)", # 4
+        f"5. 鋁渣升溫吸收顯熱: {q_dross_sens:.1f} GJ ({q_dross_sens/q_chamber_in*100:.1f}%)", # 5
+        f"6. 爐壁與爐底導熱損: {q_wall:.1f} GJ ({q_wall/q_chamber_in*100:.1f}%)", # 6
+        f"7. 操作附加熱損: {q_overhead:.1f} GJ ({q_overhead/q_chamber_in*100:.1f}%)", # 7
+        f"8. 爐頂/爐門逸散煙氣: {q_roof_leak:.1f} GJ ({q_roof_leak/q_chamber_in*100:.1f}%)", # 8
+        f"9. 進入蓄熱箱高溫煙氣: {q_bed_flue:.1f} GJ", # 9
+        f"9b. 煙囪低溫排煙熱損: {q_stack:.1f} GJ ({q_stack/q_chamber_in*100:.1f}%)", # 10
+        f"9a. 蓄熱床預熱空氣回收: {q_air_preheat:.1f} GJ ({q_air_preheat/q_chamber_in*100:.1f}%)", # 11
     ]
     
     node_colors = [
-        "#1E88E5", "#FB8C00", "#00ACC1", "#5E35B1", "#43A047",
-        "#FFA726", "#8D6E63", "#E53935", "#F57C00", "#78909C"
+        "#1E88E5",  # 0 Fuel
+        "#FB8C00",  # 1 Ox
+        "#00ACC1",  # 2 Air Preheat (Cyan)
+        "#5E35B1",  # 3 Chamber (Purple)
+        "#43A047",  # 4 Al
+        "#FFA726",  # 5 Dross
+        "#8D6E63",  # 6 Wall
+        "#FDD835",  # 7 Overhead
+        "#E53935",  # 8 Roof Leak
+        "#D81B60",  # 9 Flue to Regenerator (Pink/Red)
+        "#78909C",  # 10 Stack
+        "#00838F",  # 11 9a Recycle Node (Darker Cyan)
     ]
     
-    sources = [0, 1, 2, 3, 3, 3, 3, 3, 8]
-    targets = [3, 3, 3, 4, 5, 6, 7, 8, 9]
-    values = [q_fuel, q_ox, q_air_preheat, q_al, q_dross_sens, q_wall, q_roof_leak, q_bed_flue, q_stack]
+    sources = [
+        0, 1, 2,          # Inputs to Chamber
+        3, 3, 3, 3, 3, 3, # Outputs from Chamber
+        9, 9,             # Splits from Regenerator Flue
+        11                # 9a flows into 3 (Air Preheat)
+    ]
+    targets = [
+        3, 3, 3,          # Target is Chamber
+        4, 5, 6, 7, 8, 9, # Targets are the output nodes
+        11, 10,           # 9 splits to 9a(11) and 9b(10)
+        2                 # 9a(11) goes to 3(2)
+    ]
+    values = [
+        q_fuel, q_ox, q_air_preheat,
+        q_al, q_dross_sens, q_wall, q_overhead, q_roof_leak, q_bed_flue,
+        q_air_preheat, q_stack,
+        q_air_preheat
+    ]
+    
+    link_colors = [
+        "rgba(30, 136, 229, 0.40)",   # Fuel -> Chamber
+        "rgba(251, 140, 0, 0.40)",    # Ox -> Chamber
+        "rgba(0, 172, 193, 0.50)",    # Preheat -> Chamber
+        "rgba(67, 160, 71, 0.50)",    # Chamber -> Al
+        "rgba(255, 167, 38, 0.40)",   # Chamber -> Dross
+        "rgba(141, 110, 99, 0.40)",   # Chamber -> Wall
+        "rgba(253, 216, 53, 0.40)",   # Chamber -> Overhead
+        "rgba(229, 57, 53, 0.40)",    # Chamber -> Roof leak
+        "rgba(216, 27, 96, 0.40)",    # Chamber -> Flue to Bed
+        "rgba(0, 131, 143, 0.40)",    # Flue -> 9a Recycle
+        "rgba(120, 144, 156, 0.40)",  # Flue -> 9b Stack
+        "rgba(0, 172, 193, 0.40)",    # 9a -> 3
+    ]
     
     fig = go.Figure(data=[go.Sankey(
         node=dict(pad=15, thickness=16, line=dict(color="black", width=0.5), label=labels, color=node_colors),
-        link=dict(source=sources, target=targets, value=values, color="rgba(180, 180, 180, 0.4)")
+        link=dict(source=sources, target=targets, value=values, color=link_colors)
     )])
     fig.update_layout(
         title=dict(text=f"<b>{title}</b>", font=dict(size=12, color="#111827", family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif")),
-        font=dict(size=11, color="#111827", family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"),
-        height=420,
-        margin=dict(l=10, r=10, t=35, b=20)
+        font=dict(size=10, color="#111827", family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"),
+        height=480,
+        margin=dict(l=5, r=5, t=35, b=20)
     )
     return fig
 
@@ -249,9 +292,9 @@ def main():
         <div class="mobile-header">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <h2>🔥 80T 熔鋁爐升溫最佳化</h2>
-                <span style="background:rgba(255,255,255,0.25); padding:2px 8px; border-radius:10px; font-size:0.72rem; font-weight:700;">v2.3.3</span>
+                <span style="background:rgba(255,255,255,0.25); padding:2px 8px; border-radius:10px; font-size:0.72rem; font-weight:700;">v2.4.0</span>
             </div>
-            <p>📱 手機即時操作配方與節能試算 (燃氣/頂溫全時程對應版)</p>
+            <p>📱 手機即時操作配方與節能試算 (物理模型校正與閉環控制修正版)</p>
         </div>
     """, unsafe_allow_html=True)
 
